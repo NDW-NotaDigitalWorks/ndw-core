@@ -1,23 +1,66 @@
 // app/hub/page.tsx
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 export default function HubPage() {
+  const router = useRouter();
+  const [checking, setChecking] = useState(true);
+  const [email, setEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        router.replace("/login");
+        return;
+      }
+      setEmail(data.user.email ?? null);
+      setChecking(false);
+    })();
+  }, [router]);
+
+  async function onLogout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
+  if (checking) {
+    return (
+      <main className="min-h-dvh bg-white text-neutral-900">
+        <div className="mx-auto w-full max-w-5xl px-4 py-10 text-sm text-neutral-600">
+          Caricamento NDW Hub...
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
       <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
-            <span className="text-sm font-semibold tracking-tight">NDW Hub</span>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold tracking-tight">NDW Hub</span>
+              {email && (
+                <span className="text-[11px] text-neutral-500">{email}</span>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
             <Link href="/">
               <Button variant="ghost">Home</Button>
             </Link>
-            <Button>Upgrade</Button>
+            <Button variant="outline" onClick={onLogout}>
+              Logout
+            </Button>
           </div>
         </div>
       </header>
@@ -31,8 +74,8 @@ export default function HubPage() {
             Benvenuto in NDW Hub
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-            Qui vedrai i tuoi prodotti attivi, il piano, i KPI e le azioni rapide.
-            (Auth e piani arrivano nella prossima fase.)
+            Ora /hub è accessibile solo dopo login. Nel prossimo step
+            aggiungeremo entitlements e piani Stripe.
           </p>
         </div>
 
@@ -62,10 +105,10 @@ export default function HubPage() {
               <Link href="/routepro">
                 <Button className="w-full justify-start">Apri RoutePro</Button>
               </Link>
-              <Button variant="outline" className="w-full justify-start">
+              <Button variant="outline" className="w-full justify-start" disabled>
                 Gestisci profilo (coming soon)
               </Button>
-              <Button variant="secondary" className="w-full justify-start">
+              <Button variant="secondary" className="w-full justify-start" disabled>
                 Vedi piani (coming soon)
               </Button>
             </CardContent>
@@ -126,6 +169,5 @@ function ProductRow({
   );
 
   if (disabled) return row;
-
   return <Link href={href}>{row}</Link>;
 }
