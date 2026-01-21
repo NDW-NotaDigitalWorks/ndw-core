@@ -18,8 +18,8 @@ type RouteRow = {
 
 type StopRow = {
   id: string;
-  position: number;
-  optimized_position: number | null;
+  position: number; // AF original
+  optimized_position: number | null; // ORS optimized
   address: string;
   note: string | null;
   lat: number | null;
@@ -74,12 +74,15 @@ export default function RouteDetailsPage() {
       : arr.sort((a, b) => a.position - b.position);
   }, [stops]);
 
-  const hasOptimizedOrder = useMemo(
-    () => orderedStops.some((s) => s.optimized_position != null) || (route?.status === "optimized"),
-    [orderedStops, route]
-  );
+  const hasOptimizedOrder = useMemo(() => {
+    return (
+      route?.status === "optimized" ||
+      orderedStops.some((s) => s.optimized_position != null)
+    );
+  }, [orderedStops, route]);
 
   const exportText = useMemo(() => {
+    // What user wants to copy/paste (current visible order)
     return orderedStops.map((s, idx) => `${idx + 1}. ${s.address}`).join("\n");
   }, [orderedStops]);
 
@@ -203,7 +206,8 @@ export default function RouteDetailsPage() {
     if (!route) return;
 
     const header = toCsvRow([
-      "order",
+      "order_visible",
+      "af_stop_number",
       "address",
       "note",
       "lat",
@@ -214,7 +218,8 @@ export default function RouteDetailsPage() {
 
     const rows = orderedStops.map((s, idx) =>
       toCsvRow([
-        idx + 1,
+        idx + 1, // visible order in UI (optimized if available)
+        s.position, // AF original number (current MVP)
         s.address,
         s.note ?? "",
         s.lat ?? "",
@@ -224,7 +229,7 @@ export default function RouteDetailsPage() {
       ])
     );
 
-    const csv = [header, ...rows].join("\n");
+    const csv = [header, ... rows].join("\n");
     const safeName = (route.name || "route").replace(/[^\w\-]+/g, "_");
     const datePart = route.route_date ? `${route.route_date}_` : "";
     downloadTextFile(`${datePart}${safeName}_export.csv`, csv, "text/csv");
@@ -317,7 +322,7 @@ export default function RouteDetailsPage() {
                   readOnly
                 />
                 <p className="mt-2 text-xs text-neutral-500">
-                  Usa “Copia lista” e incolla dove vuoi (note, WhatsApp, ecc.).
+                  Per i driver: in lista stop vedi sempre il numero originale (AF #).
                 </p>
               </CardContent>
             </Card>
@@ -341,12 +346,24 @@ export default function RouteDetailsPage() {
                       >
                         <div className="min-w-0">
                           <div className="text-sm font-medium">
-                            {idx + 1}. {s.address}
+                            <span className="mr-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
+                              AF #{s.position}
+                            </span>
+
+                            {hasOptimizedOrder && (
+                              <span className="mr-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
+                                OPT #{idx + 1}
+                              </span>
+                            )}
+
+                            {s.address}
                           </div>
+
                           {s.note && (
                             <div className="mt-1 text-xs text-neutral-500">{s.note}</div>
                           )}
                         </div>
+
                         <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
                           stop
                         </span>
@@ -356,8 +373,7 @@ export default function RouteDetailsPage() {
                 )}
 
                 <div className="mt-4 rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
-                  Starter completato: import + ottimizza + export. Prossimo step: Whop
-                  entitlement (piani).
+                  Starter completato: import + ottimizza + export + AF stop number.
                 </div>
               </CardContent>
             </Card>
