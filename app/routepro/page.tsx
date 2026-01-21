@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { hasActiveEntitlement } from "@/lib/entitlement";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -28,20 +29,33 @@ export default function RouteProHome() {
       setChecking(true);
       setError(null);
 
+      // 1) Check login
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
         router.replace("/login");
         return;
       }
 
+      // 2) Check entitlement RoutePro Starter
+      const allowed = await hasActiveEntitlement("routepro-starter");
+      if (!allowed) {
+        router.replace("/hub?upgrade=routepro");
+        return;
+      }
+
+      // 3) Load routes
       const { data, error: err } = await supabase
         .from("routes")
         .select("id,name,route_date,status,total_stops,created_at")
         .order("created_at", { ascending: false })
         .limit(10);
 
-      if (err) setError(err.message);
-      setRoutes((data as any) ?? []);
+      if (err) {
+        setError(err.message);
+      } else {
+        setRoutes((data as any) ?? []);
+      }
+
       setChecking(false);
     })();
   }, [router]);
@@ -71,14 +85,14 @@ export default function RouteProHome() {
       <section className="mx-auto w-full max-w-5xl px-4 py-8">
         <div className="mb-6">
           <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">
-            Starter
+            RoutePro Starter
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-            RoutePro — Le tue rotte
+            Le tue rotte
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
-            Crea una rotta, inserisci gli stop (anche con dettatura vocale) e
-            salva tutto per ritrovarlo quando vuoi.
+            Crea una rotta, inserisci gli stop (anche con dettatura vocale),
+            ottimizza e riparti.
           </p>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -99,7 +113,7 @@ export default function RouteProHome() {
           </CardHeader>
           <CardContent className="space-y-2">
             {checking && (
-              <div className="text-sm text-neutral-600">Caricamento...</div>
+              <div className="text-sm text-neutral-600">Caricamento…</div>
             )}
 
             {error && (
@@ -124,7 +138,7 @@ export default function RouteProHome() {
                           {r.name}
                         </div>
                         <div className="mt-1 text-xs text-neutral-500">
-                          Data: {r.route_date ?? "—"} • Stop: {r.total_stops} •{" "}
+                          Data: {r.route_date ?? "—"} • Stop: {r.total_stops} •
                           Stato: {r.status}
                         </div>
                       </div>
@@ -138,7 +152,7 @@ export default function RouteProHome() {
             )}
 
             <div className="mt-4 rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
-              Prossimo step Starter: ottimizzazione + export ordine ottimizzato.
+              Accesso attivo: RoutePro Starter
             </div>
           </CardContent>
         </Card>
