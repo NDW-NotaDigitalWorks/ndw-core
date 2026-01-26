@@ -2,16 +2,23 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+const ROUTEPRO_CHECKOUT_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL || "";
 
 export default function HubPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
+
+  const upgradeTarget = searchParams.get("upgrade"); // e.g. routepro
+  const showRouteProUpgrade = useMemo(() => upgradeTarget === "routepro", [upgradeTarget]);
 
   useEffect(() => {
     (async () => {
@@ -48,9 +55,7 @@ export default function HubPage() {
             <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
             <div className="flex flex-col">
               <span className="text-sm font-semibold tracking-tight">NDW Hub</span>
-              {email && (
-                <span className="text-[11px] text-neutral-500">{email}</span>
-              )}
+              {email && <span className="text-[11px] text-neutral-500">{email}</span>}
             </div>
           </div>
 
@@ -74,26 +79,72 @@ export default function HubPage() {
             Benvenuto in NDW Hub
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-            Ora /hub è accessibile solo dopo login. Nel prossimo step
-            aggiungeremo entitlements e piani Stripe.
+            Qui trovi i tuoi prodotti e gli accessi. Se un prodotto è bloccato, puoi
+            sbloccarlo dal checkout.
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-3">
-          <KpiCard title="Prodotti attivi" value="1" note="RoutePro (MVP)" />
-          <KpiCard title="Stato piano" value="Free" note="Upgrade quando vuoi" />
-          <KpiCard title="Automazioni" value="0" note="in arrivo" />
-        </div>
+        {showRouteProUpgrade && (
+          <Card className="mb-6 rounded-2xl border">
+            <CardHeader>
+              <CardTitle className="text-base">RoutePro è bloccato</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-neutral-600">
+              <p>
+                Per usare RoutePro devi avere un abbonamento attivo. Clicca sotto per
+                completare l’acquisto su Whop.
+              </p>
 
-        <div className="mt-6 grid gap-4 sm:grid-cols-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <a href={ROUTEPRO_CHECKOUT_URL} target="_blank" rel="noreferrer">
+                  <Button className="w-full sm:w-auto" disabled={!ROUTEPRO_CHECKOUT_URL}>
+                    Vai al checkout RoutePro
+                  </Button>
+                </a>
+                <Link href="/routepro">
+                  <Button variant="outline" className="w-full sm:w-auto">
+                    Riprova accesso
+                  </Button>
+                </Link>
+              </div>
+
+              {!ROUTEPRO_CHECKOUT_URL && (
+                <p className="text-xs text-red-600">
+                  Mancano le env: NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2">
           <Card className="rounded-2xl">
             <CardHeader>
               <CardTitle className="text-base">Prodotti</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <ProductRow name="RoutePro" badge="MVP" href="/routepro" />
-              <ProductRow name="Ristorazione" badge="In arrivo" href="#" disabled />
-              <ProductRow name="Beauty" badge="In arrivo" href="#" disabled />
+              <Link href="/routepro">
+                <div className="flex items-center justify-between rounded-xl border bg-white px-3 py-2 hover:bg-neutral-50">
+                  <span className="text-sm font-medium">RoutePro</span>
+                  <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
+                    Apri
+                  </span>
+                </div>
+              </Link>
+
+              <div className="flex items-center justify-between rounded-xl border bg-white px-3 py-2 opacity-60">
+                <span className="text-sm font-medium">Ristorazione</span>
+                <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
+                  In arrivo
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl border bg-white px-3 py-2 opacity-60">
+                <span className="text-sm font-medium">Beauty</span>
+                <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
+                  In arrivo
+                </span>
+              </div>
             </CardContent>
           </Card>
 
@@ -102,8 +153,8 @@ export default function HubPage() {
               <CardTitle className="text-base">Azioni rapide</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
-              <Link href="/routepro">
-                <Button className="w-full justify-start">Apri RoutePro</Button>
+              <Link href="/routepro/import">
+                <Button className="w-full justify-start">Nuova rotta (RoutePro)</Button>
               </Link>
               <Button variant="outline" className="w-full justify-start" disabled>
                 Gestisci profilo (coming soon)
@@ -117,57 +168,4 @@ export default function HubPage() {
       </section>
     </main>
   );
-}
-
-function KpiCard({
-  title,
-  value,
-  note,
-}: {
-  title: string;
-  value: string;
-  note: string;
-}) {
-  return (
-    <Card className="rounded-2xl">
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-neutral-600">
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-3xl font-semibold tracking-tight">{value}</div>
-        <div className="mt-1 text-xs text-neutral-500">{note}</div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function ProductRow({
-  name,
-  badge,
-  href,
-  disabled,
-}: {
-  name: string;
-  badge: string;
-  href: string;
-  disabled?: boolean;
-}) {
-  const row = (
-    <div
-      className={[
-        "flex items-center justify-between rounded-xl border bg-white px-3 py-2",
-        disabled ? "opacity-60" : "hover:bg-neutral-50",
-      ].join(" ")}
-    >
-      <span className="text-sm font-medium">{name}</span>
-      <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-        {badge}
-      </span>
-    </div>
-  );
-
-  if (disabled) return row;
-  return <Link href={href}>{row}</Link>;
 }
