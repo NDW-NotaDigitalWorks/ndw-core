@@ -131,9 +131,16 @@ export default function RouteDetailsPage() {
     setOptimizing(true);
 
     try {
+      // get token for hybrid ORS
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token || null;
+
       const res = await fetch("/api/routepro/optimize", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           stops: stops.map((s) => ({
             id: s.id,
@@ -180,7 +187,7 @@ export default function RouteDetailsPage() {
         algorithm,
       });
 
-      setMsg("Ottimizzazione completata ✅");
+      setMsg(`Ottimizzazione completata ✅ (${data.keyMode === "user" ? "ORS utente" : "ORS NDW"})`);
       await load();
     } catch (e: any) {
       setMsg(e?.message ?? "Errore ottimizzazione.");
@@ -316,50 +323,6 @@ export default function RouteDetailsPage() {
                   value={exportText}
                   readOnly
                 />
-                <p className="mt-2 text-xs text-neutral-500">
-                  AF # resta sempre visibile in Driver Mode.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl">
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Stop ({hasOptimizedOrder ? "ordine ottimizzato" : "ordine originale"})
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {orderedStops.length === 0 ? (
-                  <div className="text-sm text-neutral-600">Nessuno stop.</div>
-                ) : (
-                  <div className="divide-y rounded-2xl border">
-                    {orderedStops.map((s, idx) => (
-                      <div key={s.id} className="flex items-start justify-between gap-4 px-4 py-3">
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium">
-                            <span className="mr-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-                              AF #{s.position}
-                            </span>
-                            {hasOptimizedOrder && (
-                              <span className="mr-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-                                OPT #{idx + 1}
-                              </span>
-                            )}
-                            {s.address}
-                          </div>
-
-                          {s.note && (
-                            <div className="mt-1 text-xs text-neutral-500">{s.note}</div>
-                          )}
-                        </div>
-
-                        <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-                          stop
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </CardContent>
             </Card>
           </div>
