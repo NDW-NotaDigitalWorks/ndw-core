@@ -69,6 +69,9 @@ export default function RouteProHome() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link href="/routepro/settings">
+              <Button variant="outline">Settings</Button>
+            </Link>
             <Link href="/routepro/start">
               <Button variant="outline">Come funziona</Button>
             </Link>
