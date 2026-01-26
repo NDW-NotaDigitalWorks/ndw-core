@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import {
   parseStopsFromText,
   type ImportStopInput,
 } from "@/lib/routeproRepository";
+import { createSpeechController, getSpeechSupport } from "@/lib/routepro/speech";
 
 function todayISODate(): string {
   const d = new Date();
@@ -33,13 +34,17 @@ export default function RouteProImportPage() {
   const [warehouseAddress, setWarehouseAddress] = useState("");
   const [addReturn, setAddReturn] = useState(true);
 
+  // Voice
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [listening, setListening] = useState(false);
+  const speechRef = useRef<ReturnType<typeof createSpeechController> | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const baseStops = useMemo(() => parseStopsFromText(rawStops), [rawStops]);
 
   const finalStops = useMemo(() => {
-    // If flex mode disabled, just return base stops with default AF numbering 1..N
     if (!flexMode) {
       return baseStops.map((s, idx) => ({
         ...s,
@@ -48,13 +53,12 @@ export default function RouteProImportPage() {
       })) as ImportStopInput[];
     }
 
-    // Flex mode enabled: we require warehouse address
     if (!warehouseAddress.trim()) return [] as ImportStopInput[];
 
     const deliveries = baseStops.map((s, idx) => ({
       ...s,
       stopType: "delivery" as const,
-      afStopNumber: idx + 2, // deliveries start at AF #2
+      afStopNumber: idx + 2,
     }));
 
     const pickup: ImportStopInput = {
@@ -67,13 +71,48 @@ export default function RouteProImportPage() {
       const ret: ImportStopInput = {
         address: warehouseAddress.trim(),
         stopType: "return",
-        afStopNumber: deliveries.length + 2, // last = N deliveries + pickup
+        afStopNumber: deliveries.length + 2,
       };
       return [pickup, ...deliveries, ret];
     }
 
     return [pickup, ...deliveries];
   }, [flexMode, warehouseAddress, addReturn, baseStops]);
+
+  useEffect(() => {
+    const s = getSpeechSupport();
+    setVoiceSupported(s.supported);
+
+    speechRef.current = createSpeechController({
+      lang: "it-IT",
+      onText: (text) => {
+        // Append dictated text as a NEW LINE (1 stop per line)
+        setRawStops((prev) => {
+          const trimmed = prev.trimEnd();
+          const prefix = trimmed ? trimmed + "\n" : "";
+          return prefix + text;
+        });
+      },
+      onError: (msg) => setMessage(`Vocale: ${msg}`),
+      onState: (isOn) => setListening(isOn),
+    });
+
+    return () => {
+      try {
+        speechRef.current?.stop();
+      } catch {}
+    };
+  }, []);
+
+  function toggleVoice() {
+    setMessage(null);
+    if (!speechRef.current?.supported) {
+      setMessage("Riconoscimento vocale non supportato. Usa la dettatura della tastiera.");
+      return;
+    }
+    if (listening) speechRef.current.stop();
+    else speechRef.current.start();
+  }
 
   async function onCreateRoute() {
     setMessage(null);
@@ -146,15 +185,23 @@ export default function RouteProImportPage() {
             Inserisci stop (uno per riga)
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
-            Flex Mode aggiunge Pickup (AF #1) e Return (ultimo). Così la numerazione è
-            “Amazon-like”.
+            Flex Mode: Pickup AF #1, consegne AF #2..N, Return ultimo.
+            Vocale: se supportato, detti e ogni frase diventa uno stop.
           </p>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-3">
           <Card className="rounded-2xl sm:col-span-2">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Stop</CardTitle>
+              <Button
+                variant={listening ? "secondary" : "outline"}
+                onClick={toggleVoice}
+                disabled={!voiceSupported && !listening}
+                title={!voiceSupported ? "Non supportato: usa dettatura tastiera" : ""}
+              >
+                {listening ? "🎙️ In ascolto..." : "🎙️ Dettatura"}
+              </Button>
             </CardHeader>
             <CardContent className="space-y-3">
               <textarea
@@ -166,8 +213,7 @@ export default function RouteProImportPage() {
 
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-xs text-neutral-500">
-                  Stop inseriti (delivery):{" "}
-                  <span className="font-semibold">{baseStops.length}</span>
+                  Delivery: <span className="font-semibold">{baseStops.length}</span>
                   {flexMode && (
                     <>
                       {" "}
@@ -206,61 +252,35 @@ export default function RouteProImportPage() {
             <CardContent className="space-y-3">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Nome</label>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Turno mattina"
-                />
+                <Input value={name} onChange={(e) => setName(e.target.value)} />
               </div>
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Data</label>
-                <Input
-                  type="date"
-                  value={routeDate}
-                  onChange={(e) => setRouteDate(e.target.value)}
-                />
+                <Input type="date" value={routeDate} onChange={(e) => setRouteDate(e.target.value)} />
               </div>
 
               <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
                 <div className="flex items-center justify-between">
                   <span className="font-medium">Flex Mode</span>
-                  <input
-                    type="checkbox"
-                    checked={flexMode}
-                    onChange={(e) => setFlexMode(e.target.checked)}
-                  />
+                  <input type="checkbox" checked={flexMode} onChange={(e) => setFlexMode(e.target.checked)} />
                 </div>
 
                 {flexMode && (
                   <div className="mt-3 space-y-2">
-                    <label className="text-xs text-neutral-600">
-                      Deposito (pickup/return)
-                    </label>
-                    <Input
-                      value={warehouseAddress}
-                      onChange={(e) => setWarehouseAddress(e.target.value)}
-                      placeholder="Es. Hub Burago di Molgora..."
-                    />
+                    <label className="text-xs text-neutral-600">Deposito (pickup/return)</label>
+                    <Input value={warehouseAddress} onChange={(e) => setWarehouseAddress(e.target.value)} />
 
                     <div className="flex items-center justify-between pt-1">
                       <span className="text-xs text-neutral-600">Aggiungi Return</span>
-                      <input
-                        type="checkbox"
-                        checked={addReturn}
-                        onChange={(e) => setAddReturn(e.target.checked)}
-                      />
+                      <input type="checkbox" checked={addReturn} onChange={(e) => setAddReturn(e.target.checked)} />
                     </div>
-
-                    <p className="text-[11px] text-neutral-500">
-                      Flex: Pickup = AF #1, consegne = AF #2..N, Return = ultimo.
-                    </p>
                   </div>
                 )}
               </div>
 
               <div className="rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
-                Tip driver: dettatura vocale per inserire gli indirizzi, uno per riga.
+                Se il vocale non funziona, usa la dettatura della tastiera: è sempre affidabile.
               </div>
             </CardContent>
           </Card>
