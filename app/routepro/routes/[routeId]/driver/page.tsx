@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { StopCard } from "@/components/routepro/StopCard";
+import { RouteMap } from "@/components/routepro/RouteMap";
 import { Button } from "@/components/ui/button";
 import { openNavigation, setNavPref, type NavApp } from "@/lib/routepro/navigation";
 
@@ -29,9 +30,9 @@ export default function DriverModePage() {
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
 
   const [navApp, setNavApp] = useState<NavApp>("google");
+  const [view, setView] = useState<"list" | "map">("list");
 
   useEffect(() => {
-    // load nav preference
     const v = (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) || "google";
     setNavApp(v === "waze" ? "waze" : "google");
   }, []);
@@ -85,6 +86,21 @@ export default function DriverModePage() {
     () => orderedStops.find((s) => !s.is_done) ?? null,
     [orderedStops]
   );
+
+  const mapStops = useMemo(() => {
+    return orderedStops
+      .filter((s) => s.lat != null && s.lng != null)
+      .map((s, idx) => ({
+        id: s.id,
+        af: s.position,
+        opt: s.optimized_position ?? idx + 1,
+        address: s.address,
+        lat: s.lat as number,
+        lng: s.lng as number,
+        isDone: s.is_done,
+        isActive: s.id === activeStopId,
+      }));
+  }, [orderedStops, activeStopId]);
 
   async function toggleDone(stopId: string, nextValue: boolean) {
     setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s)));
@@ -154,7 +170,7 @@ export default function DriverModePage() {
               className="flex-1"
               onClick={() => onSetNav("google")}
             >
-              Google Maps
+              Google
             </Button>
             <Button
               variant={navApp === "waze" ? "secondary" : "outline"}
@@ -165,6 +181,24 @@ export default function DriverModePage() {
             </Button>
           </div>
 
+          <div className="mt-2 flex gap-2">
+            <Button
+              variant={view === "list" ? "secondary" : "outline"}
+              className="flex-1"
+              onClick={() => setView("list")}
+            >
+              Lista
+            </Button>
+            <Button
+              variant={view === "map" ? "secondary" : "outline"}
+              className="flex-1"
+              onClick={() => setView("map")}
+              disabled={mapStops.length === 0}
+            >
+              Mappa
+            </Button>
+          </div>
+
           <div className="mt-2">
             <Button variant="secondary" className="w-full" onClick={load}>
               Aggiorna
@@ -172,19 +206,23 @@ export default function DriverModePage() {
           </div>
         </div>
 
-        {orderedStops.map((s, idx) => (
-          <StopCard
-            key={s.id}
-            afNumber={s.position}
-            optNumber={s.optimized_position ?? idx + 1}
-            address={s.address}
-            lat={s.lat}
-            lng={s.lng}
-            isDone={s.is_done}
-            isActive={s.id === activeStopId}
-            onToggleDone={() => toggleDone(s.id, !s.is_done)}
-          />
-        ))}
+        {view === "map" ? (
+          <RouteMap stops={mapStops} />
+        ) : (
+          orderedStops.map((s, idx) => (
+            <StopCard
+              key={s.id}
+              afNumber={s.position}
+              optNumber={s.optimized_position ?? idx + 1}
+              address={s.address}
+              lat={s.lat}
+              lng={s.lng}
+              isDone={s.is_done}
+              isActive={s.id === activeStopId}
+              onToggleDone={() => toggleDone(s.id, !s.is_done)}
+            />
+          ))
+        )}
       </div>
     </main>
   );
