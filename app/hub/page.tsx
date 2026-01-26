@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,13 +12,17 @@ const ROUTEPRO_CHECKOUT_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL 
 
 export default function HubPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
 
-  const upgradeTarget = searchParams.get("upgrade"); // e.g. routepro
-  const showRouteProUpgrade = useMemo(() => upgradeTarget === "routepro", [upgradeTarget]);
+  // instead of useSearchParams (build issue), read query client-side
+  const [upgradeTarget, setUpgradeTarget] = useState<string | null>(null);
+
+  const showRouteProUpgrade = useMemo(
+    () => upgradeTarget === "routepro",
+    [upgradeTarget]
+  );
 
   useEffect(() => {
     (async () => {
@@ -28,6 +32,11 @@ export default function HubPage() {
         return;
       }
       setEmail(data.user.email ?? null);
+
+      // read query params safely client-side
+      const params = new URLSearchParams(window.location.search);
+      setUpgradeTarget(params.get("upgrade"));
+
       setChecking(false);
     })();
   }, [router]);
