@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
@@ -15,14 +15,7 @@ export default function HubPage() {
 
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
-
-  // instead of useSearchParams (build issue), read query client-side
   const [upgradeTarget, setUpgradeTarget] = useState<string | null>(null);
-
-  const showRouteProUpgrade = useMemo(
-    () => upgradeTarget === "routepro",
-    [upgradeTarget]
-  );
 
   useEffect(() => {
     (async () => {
@@ -33,7 +26,6 @@ export default function HubPage() {
       }
       setEmail(data.user.email ?? null);
 
-      // read query params safely client-side
       const params = new URLSearchParams(window.location.search);
       setUpgradeTarget(params.get("upgrade"));
 
@@ -82,26 +74,24 @@ export default function HubPage() {
       <section className="mx-auto w-full max-w-5xl px-4 py-8">
         <div className="mb-6">
           <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">
-            Dashboard
+            NDW Core
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-            Benvenuto in NDW Hub
+            Dashboard operativa
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-            Qui trovi i tuoi prodotti e gli accessi. Se un prodotto è bloccato, puoi
-            sbloccarlo dal checkout.
+            Turni, schede e checklist: strumenti trasversali per chi lavora ogni giorno.
           </p>
         </div>
 
-        {showRouteProUpgrade && (
+        {upgradeTarget === "routepro" && (
           <Card className="mb-6 rounded-2xl border">
             <CardHeader>
               <CardTitle className="text-base">RoutePro è bloccato</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-neutral-600">
               <p>
-                Per usare RoutePro devi avere un abbonamento attivo. Clicca sotto per
-                completare l’acquisto su Whop.
+                Per usare RoutePro devi avere un abbonamento attivo. Clicca sotto per completare l’acquisto su Whop.
               </p>
 
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -116,12 +106,6 @@ export default function HubPage() {
                   </Button>
                 </Link>
               </div>
-
-              {!ROUTEPRO_CHECKOUT_URL && (
-                <p className="text-xs text-red-600">
-                  Mancano le env: NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL
-                </p>
-              )}
             </CardContent>
           </Card>
         )}
@@ -129,47 +113,45 @@ export default function HubPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           <Card className="rounded-2xl">
             <CardHeader>
-              <CardTitle className="text-base">Prodotti</CardTitle>
+              <CardTitle className="text-base">Strumenti NDW Core</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Link href="/routepro">
-                <div className="flex items-center justify-between rounded-xl border bg-white px-3 py-2 hover:bg-neutral-50">
-                  <span className="text-sm font-medium">RoutePro</span>
-                  <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-                    Apri
-                  </span>
-                </div>
+              <Link href="/hub/shifts">
+                <Button variant="outline" className="w-full justify-start">
+                  Turni
+                </Button>
+              </Link>
+              <Link href="/hub/cards">
+                <Button variant="outline" className="w-full justify-start">
+                  Schede lavoro
+                </Button>
+              </Link>
+              <Link href="/hub/checklists">
+                <Button variant="outline" className="w-full justify-start">
+                  Checklist
+                </Button>
               </Link>
 
-              <div className="flex items-center justify-between rounded-xl border bg-white px-3 py-2 opacity-60">
-                <span className="text-sm font-medium">Ristorazione</span>
-                <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-                  In arrivo
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl border bg-white px-3 py-2 opacity-60">
-                <span className="text-sm font-medium">Beauty</span>
-                <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-                  In arrivo
-                </span>
+              <div className="rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
+                Questi moduli sono universali e riutilizzabili per ogni verticale NDW.
               </div>
             </CardContent>
           </Card>
 
           <Card className="rounded-2xl">
             <CardHeader>
-              <CardTitle className="text-base">Azioni rapide</CardTitle>
+              <CardTitle className="text-base">Prodotti</CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              <Link href="/routepro/import">
-                <Button className="w-full justify-start">Nuova rotta (RoutePro)</Button>
+            <CardContent className="space-y-3">
+              <Link href="/routepro">
+                <Button className="w-full justify-start">Apri RoutePro</Button>
               </Link>
+
               <Button variant="outline" className="w-full justify-start" disabled>
-                Gestisci profilo (coming soon)
+                Ristorazione (in arrivo)
               </Button>
-              <Button variant="secondary" className="w-full justify-start" disabled>
-                Vedi piani (coming soon)
+              <Button variant="outline" className="w-full justify-start" disabled>
+                Beauty (in arrivo)
               </Button>
             </CardContent>
           </Card>
