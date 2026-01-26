@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { StopCard } from "@/components/routepro/StopCard";
@@ -32,6 +32,9 @@ export default function DriverModePage() {
   const [navApp, setNavApp] = useState<NavApp>("google");
   const [view, setView] = useState<"list" | "map">("list");
 
+  // refs for auto-scroll
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
   useEffect(() => {
     const v =
       (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) ||
@@ -43,6 +46,17 @@ export default function DriverModePage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeId]);
+
+  useEffect(() => {
+    // auto-scroll active card into view (only in list mode)
+    if (view !== "list") return;
+    if (!activeStopId) return;
+
+    const el = cardRefs.current[activeStopId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [activeStopId, view]);
 
   async function load() {
     setLoading(true);
@@ -140,6 +154,16 @@ export default function DriverModePage() {
     });
   }
 
+  function navToNextPending() {
+    if (!nextPendingStop) return;
+    openNavigation({
+      lat: nextPendingStop.lat,
+      lng: nextPendingStop.lng,
+      address: nextPendingStop.address,
+    });
+    setActiveStopId(nextPendingStop.id);
+  }
+
   function onSetNav(app: NavApp) {
     setNavApp(app);
     setNavPref(app);
@@ -165,7 +189,7 @@ export default function DriverModePage() {
                 </div>
               )}
               <div className="mt-1 text-[11px] text-neutral-500">
-                Vista attuale: <b>{view === "list" ? "LISTA" : "MAPPA"}</b>
+                Vista: <b>{view === "list" ? "LISTA" : "MAPPA"}</b>
               </div>
             </div>
 
@@ -179,7 +203,13 @@ export default function DriverModePage() {
               Naviga corrente
             </Button>
             <Button variant="outline" onClick={goToNextPending}>
-              Prossimo non fatto
+              Prossimo (seleziona)
+            </Button>
+          </div>
+
+          <div className="mt-2">
+            <Button onClick={navToNextPending} disabled={!nextPendingStop}>
+              Naviga prossimo non fatto
             </Button>
           </div>
 
@@ -242,6 +272,9 @@ export default function DriverModePage() {
           orderedStops.map((s, idx) => (
             <StopCard
               key={s.id}
+              ref={(el) => {
+                cardRefs.current[s.id] = el;
+              }}
               afNumber={s.position}
               optNumber={s.optimized_position ?? idx + 1}
               address={s.address}
