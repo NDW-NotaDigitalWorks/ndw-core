@@ -2,10 +2,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { hasActiveEntitlement } from "@/lib/entitlement";
+import { getLastRouteId } from "@/lib/routepro/prefs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -23,6 +24,8 @@ export default function RouteProHome() {
   const [checking, setChecking] = useState(true);
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const lastRouteId = useMemo(() => getLastRouteId(), []);
 
   useEffect(() => {
     (async () => {
@@ -85,17 +88,20 @@ export default function RouteProHome() {
             Le tue rotte
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
-            Crea una rotta, ottimizza e usa Driver Mode (AF/OPT, naviga, next, mappa).
+            Riprendi da dove eri rimasto o crea una nuova rotta.
           </p>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            {lastRouteId && (
+              <Link href={`/routepro/routes/${lastRouteId}/driver`}>
+                <Button className="w-full sm:w-auto">Riprendi Driver Mode</Button>
+              </Link>
+            )}
             <Link href="/routepro/import">
-              <Button className="w-full sm:w-auto">Nuova rotta</Button>
+              <Button variant="outline" className="w-full sm:w-auto">Nuova rotta</Button>
             </Link>
             <Link href="/routepro/start">
-              <Button variant="outline" className="w-full sm:w-auto">
-                Guida rapida
-              </Button>
+              <Button variant="outline" className="w-full sm:w-auto">Guida rapida</Button>
             </Link>
           </div>
         </div>
@@ -123,9 +129,7 @@ export default function RouteProHome() {
                     <Button className="w-full sm:w-auto">Crea la prima rotta</Button>
                   </Link>
                   <Link href="/routepro/start">
-                    <Button variant="outline" className="w-full sm:w-auto">
-                      Vedi workflow
-                    </Button>
+                    <Button variant="outline" className="w-full sm:w-auto">Vedi workflow</Button>
                   </Link>
                 </div>
               </div>

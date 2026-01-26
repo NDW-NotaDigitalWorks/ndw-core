@@ -9,11 +9,12 @@ import { StopCard } from "@/components/routepro/StopCard";
 import { RouteMap } from "@/components/routepro/RouteMap";
 import { Button } from "@/components/ui/button";
 import { openNavigation, setNavPref, type NavApp } from "@/lib/routepro/navigation";
+import { setLastRouteId, getDriverView, setDriverView } from "@/lib/routepro/prefs";
 
 type StopRow = {
   id: string;
-  position: number; // fallback
-  af_stop_number: number | null; // Flex AF real
+  position: number;
+  af_stop_number: number | null;
   stop_type: "pickup" | "delivery" | "return";
   optimized_position: number | null;
   address: string;
@@ -37,11 +38,19 @@ export default function DriverModePage() {
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
+    // persist last route
+    setLastRouteId(routeId);
+
+    // load per-route view preference
+    setView(getDriverView(routeId));
+
+    // load nav preference
     const v =
       (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) ||
       "google";
     setNavApp(v === "waze" ? "waze" : "google");
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeId]);
 
   useEffect(() => {
     load();
@@ -49,6 +58,12 @@ export default function DriverModePage() {
   }, [routeId]);
 
   useEffect(() => {
+    // persist view
+    setDriverView(routeId, view);
+  }, [routeId, view]);
+
+  useEffect(() => {
+    // auto-scroll active card into view (only in list)
     if (view !== "list") return;
     if (!activeStopId) return;
     const el = cardRefs.current[activeStopId];
@@ -116,19 +131,12 @@ export default function DriverModePage() {
   }, [orderedStops, activeStopId]);
 
   async function toggleDone(stopId: string, nextValue: boolean) {
-    setStops((prev) =>
-      prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s))
-    );
+    setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s)));
 
-    const { error } = await supabase
-      .from("route_stops")
-      .update({ is_done: nextValue })
-      .eq("id", stopId);
+    const { error } = await supabase.from("route_stops").update({ is_done: nextValue }).eq("id", stopId);
 
     if (error) {
-      setStops((prev) =>
-        prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s))
-      );
+      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s)));
       return;
     }
 
@@ -234,9 +242,7 @@ export default function DriverModePage() {
           orderedStops.map((s, idx) => (
             <StopCard
               key={s.id}
-              ref={(el) => {
-                cardRefs.current[s.id] = el;
-              }}
+              ref={(el) => { cardRefs.current[s.id] = el; }}
               afNumber={s.af_stop_number ?? s.position}
               optNumber={s.optimized_position ?? idx + 1}
               address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
