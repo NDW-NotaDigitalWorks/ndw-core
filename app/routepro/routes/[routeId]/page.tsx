@@ -18,8 +18,8 @@ type RouteRow = {
 
 type StopRow = {
   id: string;
-  position: number; // AF original
-  optimized_position: number | null; // ORS optimized
+  position: number; // AF
+  optimized_position: number | null; // OPT
   address: string;
   note: string | null;
   lat: number | null;
@@ -82,7 +82,6 @@ export default function RouteDetailsPage() {
   }, [orderedStops, route]);
 
   const exportText = useMemo(() => {
-    // What user wants to copy/paste (current visible order)
     return orderedStops.map((s, idx) => `${idx + 1}. ${s.address}`).join("\n");
   }, [orderedStops]);
 
@@ -156,7 +155,6 @@ export default function RouteDetailsPage() {
       if (!optimizedStopIds.length)
         throw new Error("Nessun ordine ottimizzato ricevuto.");
 
-      // Update lat/lng
       for (const s of stopsWithCoords) {
         await supabase
           .from("route_stops")
@@ -164,7 +162,6 @@ export default function RouteDetailsPage() {
           .eq("id", s.id);
       }
 
-      // Save optimized positions 1..N
       for (let i = 0; i < optimizedStopIds.length; i++) {
         const stopId = optimizedStopIds[i];
         await supabase
@@ -218,8 +215,8 @@ export default function RouteDetailsPage() {
 
     const rows = orderedStops.map((s, idx) =>
       toCsvRow([
-        idx + 1, // visible order in UI (optimized if available)
-        s.position, // AF original number (current MVP)
+        idx + 1,
+        s.position,
         s.address,
         s.note ?? "",
         s.lat ?? "",
@@ -229,7 +226,7 @@ export default function RouteDetailsPage() {
       ])
     );
 
-    const csv = [header, ... rows].join("\n");
+    const csv = [header, ...rows].join("\n");
     const safeName = (route.name || "route").replace(/[^\w\-]+/g, "_");
     const datePart = route.route_date ? `${route.route_date}_` : "";
     downloadTextFile(`${datePart}${safeName}_export.csv`, csv, "text/csv");
@@ -247,6 +244,9 @@ export default function RouteDetailsPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link href={`/routepro/routes/${routeId}/driver`}>
+              <Button>Driver Mode</Button>
+            </Link>
             <Link href="/routepro/import">
               <Button variant="outline">Nuova rotta</Button>
             </Link>
@@ -289,11 +289,7 @@ export default function RouteDetailsPage() {
                 <Button onClick={onOptimize} disabled={optimizing || stops.length < 2}>
                   {optimizing ? "Ottimizzo..." : "Ottimizza rotta"}
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={onExportCsv}
-                  disabled={!orderedStops.length}
-                >
+                <Button variant="outline" onClick={onExportCsv} disabled={!orderedStops.length}>
                   Export CSV
                 </Button>
               </div>
@@ -305,7 +301,6 @@ export default function RouteDetailsPage() {
               </div>
             )}
 
-            {/* Export copy/paste */}
             <Card className="rounded-2xl">
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle className="text-base">
@@ -322,12 +317,11 @@ export default function RouteDetailsPage() {
                   readOnly
                 />
                 <p className="mt-2 text-xs text-neutral-500">
-                  Per i driver: in lista stop vedi sempre il numero originale (AF #).
+                  AF # resta sempre visibile in Driver Mode.
                 </p>
               </CardContent>
             </Card>
 
-            {/* Stops list */}
             <Card className="rounded-2xl">
               <CardHeader>
                 <CardTitle className="text-base">
@@ -340,22 +334,17 @@ export default function RouteDetailsPage() {
                 ) : (
                   <div className="divide-y rounded-2xl border">
                     {orderedStops.map((s, idx) => (
-                      <div
-                        key={s.id}
-                        className="flex items-start justify-between gap-4 px-4 py-3"
-                      >
+                      <div key={s.id} className="flex items-start justify-between gap-4 px-4 py-3">
                         <div className="min-w-0">
                           <div className="text-sm font-medium">
                             <span className="mr-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
                               AF #{s.position}
                             </span>
-
                             {hasOptimizedOrder && (
                               <span className="mr-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
                                 OPT #{idx + 1}
                               </span>
                             )}
-
                             {s.address}
                           </div>
 
@@ -371,10 +360,6 @@ export default function RouteDetailsPage() {
                     ))}
                   </div>
                 )}
-
-                <div className="mt-4 rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
-                  Starter completato: import + ottimizza + export + AF stop number.
-                </div>
               </CardContent>
             </Card>
           </div>

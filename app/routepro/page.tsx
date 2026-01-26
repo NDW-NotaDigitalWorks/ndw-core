@@ -29,21 +29,18 @@ export default function RouteProHome() {
       setChecking(true);
       setError(null);
 
-      // 1) Check login
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
         router.replace("/login");
         return;
       }
 
-      // 2) Check entitlement RoutePro Starter
       const allowed = await hasActiveEntitlement("routepro-starter");
       if (!allowed) {
         router.replace("/hub?upgrade=routepro");
         return;
       }
 
-      // 3) Load routes
       const { data, error: err } = await supabase
         .from("routes")
         .select("id,name,route_date,status,total_stops,created_at")
@@ -69,6 +66,9 @@ export default function RouteProHome() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link href="/routepro/start">
+              <Button variant="outline">Come funziona</Button>
+            </Link>
             <Link href="/hub">
               <Button variant="ghost">NDW Hub</Button>
             </Link>
@@ -85,15 +85,17 @@ export default function RouteProHome() {
             Le tue rotte
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
-            Crea una rotta, inserisci gli stop (anche con dettatura vocale), ottimizza e usa Driver Mode.
+            Crea una rotta, ottimizza e usa Driver Mode (AF/OPT, naviga, next, mappa).
           </p>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <Link href="/routepro/import">
               <Button className="w-full sm:w-auto">Nuova rotta</Button>
             </Link>
-            <Link href="/routepro/import">
-              <Button variant="outline" className="w-full sm:w-auto">Import rapido</Button>
+            <Link href="/routepro/start">
+              <Button variant="outline" className="w-full sm:w-auto">
+                Guida rapida
+              </Button>
             </Link>
           </div>
         </div>
@@ -112,8 +114,20 @@ export default function RouteProHome() {
             )}
 
             {!checking && !error && routes.length === 0 && (
-              <div className="text-sm text-neutral-600">
-                Nessuna rotta ancora. Clicca “Nuova rotta”.
+              <div className="space-y-3">
+                <div className="text-sm text-neutral-600">
+                  Nessuna rotta ancora. Parti da “Nuova rotta”.
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Link href="/routepro/import">
+                    <Button className="w-full sm:w-auto">Crea la prima rotta</Button>
+                  </Link>
+                  <Link href="/routepro/start">
+                    <Button variant="outline" className="w-full sm:w-auto">
+                      Vedi workflow
+                    </Button>
+                  </Link>
+                </div>
               </div>
             )}
 
