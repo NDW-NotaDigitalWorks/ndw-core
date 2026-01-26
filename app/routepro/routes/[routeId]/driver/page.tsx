@@ -154,7 +154,6 @@ export default function DriverModePage() {
   return (
     <main className="min-h-dvh bg-neutral-50 p-3">
       <div className="mx-auto flex max-w-md flex-col gap-3">
-        {/* HEADER DRIVER MODE - super visibile */}
         <div className="sticky top-2 z-10 rounded-2xl border bg-white p-3 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -175,7 +174,6 @@ export default function DriverModePage() {
             </Link>
           </div>
 
-          {/* Quick actions */}
           <div className="mt-2 grid grid-cols-2 gap-2">
             <Button onClick={navToActive} disabled={!activeStop}>
               Naviga corrente
@@ -185,7 +183,6 @@ export default function DriverModePage() {
             </Button>
           </div>
 
-          {/* Nav app */}
           <div className="mt-2 flex gap-2">
             <Button
               variant={navApp === "google" ? "secondary" : "outline"}
@@ -203,7 +200,6 @@ export default function DriverModePage() {
             </Button>
           </div>
 
-          {/* Toggle view (SUPER VISIBILE) */}
           <div className="mt-2 rounded-2xl border bg-neutral-50 p-2">
             <div className="mb-2 text-xs font-medium text-neutral-700">
               Vista (Lista / Mappa)
@@ -228,7 +224,7 @@ export default function DriverModePage() {
 
             {mapStops.length === 0 && (
               <div className="mt-2 text-[11px] text-neutral-500">
-                Mappa disabilitata: nessuno stop ha lat/lng (crea/ottimizza una rotta con geocoding).
+                Mappa disabilitata: nessuno stop ha lat/lng.
               </div>
             )}
           </div>
@@ -240,7 +236,6 @@ export default function DriverModePage() {
           </div>
         </div>
 
-        {/* CONTENT */}
         {view === "map" ? (
           <RouteMap stops={mapStops} />
         ) : (
