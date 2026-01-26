@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { StopCard } from "@/components/routepro/StopCard";
 import { Button } from "@/components/ui/button";
-import { openNavigation } from "@/lib/routepro/navigation";
+import { openNavigation, setNavPref, type NavApp } from "@/lib/routepro/navigation";
 
 type StopRow = {
   id: string;
@@ -27,6 +27,14 @@ export default function DriverModePage() {
   const [loading, setLoading] = useState(true);
   const [stops, setStops] = useState<StopRow[]>([]);
   const [activeStopId, setActiveStopId] = useState<string | null>(null);
+
+  const [navApp, setNavApp] = useState<NavApp>("google");
+
+  useEffect(() => {
+    // load nav preference
+    const v = (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) || "google";
+    setNavApp(v === "waze" ? "waze" : "google");
+  }, []);
 
   useEffect(() => {
     load();
@@ -49,9 +57,8 @@ export default function DriverModePage() {
 
     if (!error && data) {
       const list = (data as any as StopRow[]).slice();
-
-      // Ordine: se c’è optimized_position -> usa quello, altrimenti position
       const hasOpt = list.some((s) => s.optimized_position != null);
+
       list.sort((a, b) =>
         hasOpt
           ? (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999)
@@ -85,7 +92,6 @@ export default function DriverModePage() {
     const { error } = await supabase.from("route_stops").update({ is_done: nextValue }).eq("id", stopId);
 
     if (error) {
-      // rollback
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s)));
       return;
     }
@@ -103,6 +109,11 @@ export default function DriverModePage() {
   function navToActive() {
     if (!activeStop) return;
     openNavigation({ lat: activeStop.lat, lng: activeStop.lng, address: activeStop.address });
+  }
+
+  function onSetNav(app: NavApp) {
+    setNavApp(app);
+    setNavPref(app);
   }
 
   if (loading) {
@@ -128,18 +139,36 @@ export default function DriverModePage() {
             </Link>
           </div>
 
-          <div className="mt-2 flex flex-col gap-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             <Button onClick={navToActive} disabled={!activeStop}>
               Naviga stop corrente
             </Button>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={goToNextPending}>
-                Prossimo non fatto
-              </Button>
-              <Button variant="secondary" className="flex-1" onClick={load}>
-                Aggiorna
-              </Button>
-            </div>
+            <Button variant="outline" onClick={goToNextPending}>
+              Prossimo non fatto
+            </Button>
+          </div>
+
+          <div className="mt-2 flex gap-2">
+            <Button
+              variant={navApp === "google" ? "secondary" : "outline"}
+              className="flex-1"
+              onClick={() => onSetNav("google")}
+            >
+              Google Maps
+            </Button>
+            <Button
+              variant={navApp === "waze" ? "secondary" : "outline"}
+              className="flex-1"
+              onClick={() => onSetNav("waze")}
+            >
+              Waze
+            </Button>
+          </div>
+
+          <div className="mt-2">
+            <Button variant="secondary" className="w-full" onClick={load}>
+              Aggiorna
+            </Button>
           </div>
         </div>
 
