@@ -48,14 +48,10 @@ export default function RouteProHome() {
         .from("routes")
         .select("id,name,route_date,status,total_stops,created_at")
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(20);
 
-      if (err) {
-        setError(err.message);
-      } else {
-        setRoutes((data as any) ?? []);
-      }
-
+      if (err) setError(err.message);
+      setRoutes((data as any) ?? []);
       setChecking(false);
     })();
   }, [router]);
@@ -66,9 +62,7 @@ export default function RouteProHome() {
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
-            <span className="text-sm font-semibold tracking-tight">
-              RoutePro
-            </span>
+            <span className="text-sm font-semibold tracking-tight">RoutePro</span>
             <span className="ml-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
               Starter
             </span>
@@ -91,8 +85,7 @@ export default function RouteProHome() {
             Le tue rotte
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
-            Crea una rotta, inserisci gli stop (anche con dettatura vocale),
-            ottimizza e riparti.
+            Crea una rotta, inserisci gli stop (anche con dettatura vocale), ottimizza e usa Driver Mode.
           </p>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -100,9 +93,7 @@ export default function RouteProHome() {
               <Button className="w-full sm:w-auto">Nuova rotta</Button>
             </Link>
             <Link href="/routepro/import">
-              <Button variant="outline" className="w-full sm:w-auto">
-                Import rapido
-              </Button>
+              <Button variant="outline" className="w-full sm:w-auto">Import rapido</Button>
             </Link>
           </div>
         </div>
@@ -112,9 +103,7 @@ export default function RouteProHome() {
             <CardTitle className="text-base">Ultime rotte</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {checking && (
-              <div className="text-sm text-neutral-600">Caricamento…</div>
-            )}
+            {checking && <div className="text-sm text-neutral-600">Caricamento…</div>}
 
             {error && (
               <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
@@ -131,29 +120,30 @@ export default function RouteProHome() {
             {!checking && routes.length > 0 && (
               <div className="divide-y rounded-2xl border">
                 {routes.map((r) => (
-                  <Link key={r.id} href={`/routepro/routes/${r.id}`}>
-                    <div className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-neutral-50">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">
-                          {r.name}
+                  <div key={r.id} className="flex flex-col gap-2 px-4 py-3 hover:bg-neutral-50">
+                    <Link href={`/routepro/routes/${r.id}`}>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium">{r.name}</div>
+                          <div className="mt-1 text-xs text-neutral-500">
+                            Data: {r.route_date ?? "—"} • Stop: {r.total_stops} • Stato: {r.status}
+                          </div>
                         </div>
-                        <div className="mt-1 text-xs text-neutral-500">
-                          Data: {r.route_date ?? "—"} • Stop: {r.total_stops} •
-                          Stato: {r.status}
-                        </div>
+                        <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
+                          Apri
+                        </span>
                       </div>
-                      <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-                        Apri
-                      </span>
-                    </div>
-                  </Link>
+                    </Link>
+
+                    <Link href={`/routepro/routes/${r.id}/driver`}>
+                      <Button variant="outline" className="w-full justify-start">
+                        Driver Mode (AF # + OPT # + Naviga)
+                      </Button>
+                    </Link>
+                  </div>
                 ))}
               </div>
             )}
-
-            <div className="mt-4 rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
-              Accesso attivo: RoutePro Starter
-            </div>
           </CardContent>
         </Card>
       </section>
