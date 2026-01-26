@@ -12,8 +12,10 @@ import { openNavigation, setNavPref, type NavApp } from "@/lib/routepro/navigati
 
 type StopRow = {
   id: string;
-  position: number; // AF #
-  optimized_position: number | null; // OPT #
+  position: number; // fallback
+  af_stop_number: number | null; // Flex AF real
+  stop_type: "pickup" | "delivery" | "return";
+  optimized_position: number | null;
   address: string;
   lat: number | null;
   lng: number | null;
@@ -32,7 +34,6 @@ export default function DriverModePage() {
   const [navApp, setNavApp] = useState<NavApp>("google");
   const [view, setView] = useState<"list" | "map">("list");
 
-  // refs for auto-scroll
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -48,14 +49,10 @@ export default function DriverModePage() {
   }, [routeId]);
 
   useEffect(() => {
-    // auto-scroll active card into view (only in list mode)
     if (view !== "list") return;
     if (!activeStopId) return;
-
     const el = cardRefs.current[activeStopId];
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [activeStopId, view]);
 
   async function load() {
@@ -69,7 +66,7 @@ export default function DriverModePage() {
 
     const { data, error } = await supabase
       .from("route_stops")
-      .select("id, position, optimized_position, address, lat, lng, is_done")
+      .select("id, position, af_stop_number, stop_type, optimized_position, address, lat, lng, is_done")
       .eq("route_id", routeId);
 
     if (!error && data) {
@@ -108,9 +105,9 @@ export default function DriverModePage() {
       .filter((s) => s.lat != null && s.lng != null)
       .map((s, idx) => ({
         id: s.id,
-        af: s.position,
+        af: s.af_stop_number ?? s.position,
         opt: s.optimized_position ?? idx + 1,
-        address: s.address,
+        address: `${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`,
         lat: s.lat as number,
         lng: s.lng as number,
         isDone: s.is_done,
@@ -147,20 +144,12 @@ export default function DriverModePage() {
 
   function navToActive() {
     if (!activeStop) return;
-    openNavigation({
-      lat: activeStop.lat,
-      lng: activeStop.lng,
-      address: activeStop.address,
-    });
+    openNavigation({ lat: activeStop.lat, lng: activeStop.lng, address: activeStop.address });
   }
 
   function navToNextPending() {
     if (!nextPendingStop) return;
-    openNavigation({
-      lat: nextPendingStop.lat,
-      lng: nextPendingStop.lng,
-      address: nextPendingStop.address,
-    });
+    openNavigation({ lat: nextPendingStop.lat, lng: nextPendingStop.lng, address: nextPendingStop.address });
     setActiveStopId(nextPendingStop.id);
   }
 
@@ -169,11 +158,7 @@ export default function DriverModePage() {
     setNavPref(app);
   }
 
-  if (loading) {
-    return (
-      <div className="p-4 text-sm text-neutral-600">Caricamento Driver Mode…</div>
-    );
-  }
+  if (loading) return <div className="p-4 text-sm text-neutral-600">Caricamento Driver Mode…</div>;
 
   return (
     <main className="min-h-dvh bg-neutral-50 p-3">
@@ -185,7 +170,7 @@ export default function DriverModePage() {
               {activeStop && (
                 <div className="mt-1 text-xs text-neutral-700">
                   Corrente: <b>OPT #{activeStop.optimized_position ?? "—"}</b>{" "}
-                  (AF #{activeStop.position})
+                  (AF #{activeStop.af_stop_number ?? activeStop.position}) • {activeStop.stop_type}
                 </div>
               )}
               <div className="mt-1 text-[11px] text-neutral-500">
@@ -199,12 +184,8 @@ export default function DriverModePage() {
           </div>
 
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <Button onClick={navToActive} disabled={!activeStop}>
-              Naviga corrente
-            </Button>
-            <Button variant="outline" onClick={goToNextPending}>
-              Prossimo (seleziona)
-            </Button>
+            <Button onClick={navToActive} disabled={!activeStop}>Naviga corrente</Button>
+            <Button variant="outline" onClick={goToNextPending}>Prossimo (seleziona)</Button>
           </div>
 
           <div className="mt-2">
@@ -231,38 +212,19 @@ export default function DriverModePage() {
           </div>
 
           <div className="mt-2 rounded-2xl border bg-neutral-50 p-2">
-            <div className="mb-2 text-xs font-medium text-neutral-700">
-              Vista (Lista / Mappa)
-            </div>
+            <div className="mb-2 text-xs font-medium text-neutral-700">Vista (Lista / Mappa)</div>
             <div className="flex gap-2">
-              <Button
-                variant={view === "list" ? "secondary" : "outline"}
-                className="flex-1"
-                onClick={() => setView("list")}
-              >
+              <Button variant={view === "list" ? "secondary" : "outline"} className="flex-1" onClick={() => setView("list")}>
                 Lista
               </Button>
-              <Button
-                variant={view === "map" ? "secondary" : "outline"}
-                className="flex-1"
-                onClick={() => setView("map")}
-                disabled={mapStops.length === 0}
-              >
+              <Button variant={view === "map" ? "secondary" : "outline"} className="flex-1" onClick={() => setView("map")} disabled={mapStops.length === 0}>
                 Mappa
               </Button>
             </div>
-
-            {mapStops.length === 0 && (
-              <div className="mt-2 text-[11px] text-neutral-500">
-                Mappa disabilitata: nessuno stop ha lat/lng.
-              </div>
-            )}
           </div>
 
           <div className="mt-2">
-            <Button variant="secondary" className="w-full" onClick={load}>
-              Aggiorna
-            </Button>
+            <Button variant="secondary" className="w-full" onClick={load}>Aggiorna</Button>
           </div>
         </div>
 
@@ -275,9 +237,9 @@ export default function DriverModePage() {
               ref={(el) => {
                 cardRefs.current[s.id] = el;
               }}
-              afNumber={s.position}
+              afNumber={s.af_stop_number ?? s.position}
               optNumber={s.optimized_position ?? idx + 1}
-              address={s.address}
+              address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
               lat={s.lat}
               lng={s.lng}
               isDone={s.is_done}

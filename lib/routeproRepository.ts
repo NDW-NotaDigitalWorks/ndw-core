@@ -6,18 +6,21 @@ export type CreateRouteInput = {
   routeDate?: string; // YYYY-MM-DD
 };
 
+export type StopType = "pickup" | "delivery" | "return";
+
 export type ImportStopInput = {
   address: string;
   note?: string;
   lat?: number | null;
   lng?: number | null;
+
+  // Flex additions
+  stopType?: StopType;
+  afStopNumber?: number | null; // Amazon Flex numbering
 };
 
 /**
  * Creates a new route (draft) for the current user and imports stops.
- * - routes.status = draft
- * - route_stops.position = 1..N
- * - route_stops.optimized_position = null
  */
 export async function createRouteWithStops(
   route: CreateRouteInput,
@@ -25,14 +28,12 @@ export async function createRouteWithStops(
 ): Promise<{ routeId: string }> {
   if (!stops.length) throw new Error("Nessuno stop da importare.");
 
-  // Ensure user is logged in
   const { data: userData, error: userErr } = await supabase.auth.getUser();
   if (userErr) throw userErr;
   if (!userData.user) throw new Error("Non autenticato.");
 
   const routeName = (route.name ?? "Untitled route").trim() || "Untitled route";
 
-  // Create route
   const { data: routeRow, error: routeErr } = await supabase
     .from("routes")
     .insert({
@@ -48,15 +49,18 @@ export async function createRouteWithStops(
   if (routeErr) throw routeErr;
   if (!routeRow?.id) throw new Error("Creazione rotta fallita.");
 
-  // Insert stops
   const rows = stops.map((s, idx) => ({
     route_id: routeRow.id,
-    position: idx + 1,
+    position: idx + 1, // ordine di input
     optimized_position: null,
     address: s.address.trim(),
     note: s.note?.trim() || null,
     lat: s.lat ?? null,
     lng: s.lng ?? null,
+
+    stop_type: s.stopType ?? "delivery",
+    af_stop_number: s.afStopNumber ?? (idx + 1),
+    is_done: false,
   }));
 
   const { error: stopsErr } = await supabase.from("route_stops").insert(rows);
@@ -67,7 +71,6 @@ export async function createRouteWithStops(
 
 /**
  * Parse "1 address per line" input into stops.
- * PERFECT for voice dictation: each line becomes one stop.
  */
 export function parseStopsFromText(input: string): ImportStopInput[] {
   return input
