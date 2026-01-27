@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { hasRouteProAccess, getRouteProTier } from "@/lib/entitlement";
 import { getLastRouteId } from "@/lib/routepro/prefs";
+import { RouteProHeader } from "@/components/routepro/RouteProHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -24,7 +25,7 @@ export default function RouteProHome() {
   const [checking, setChecking] = useState(true);
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [tier, setTier] = useState<string>("starter");
+  const [tier, setTier] = useState<string>("STARTER");
 
   const lastRouteId = useMemo(() => getLastRouteId(), []);
 
@@ -46,13 +47,13 @@ export default function RouteProHome() {
       }
 
       const t = await getRouteProTier();
-      setTier(t ?? "starter");
+      setTier((t ?? "starter").toUpperCase());
 
       const { data, error: err } = await supabase
         .from("routes")
         .select("id,name,route_date,status,total_stops,created_at")
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(30);
 
       if (err) setError(err.message);
       setRoutes((data as any) ?? []);
@@ -62,34 +63,18 @@ export default function RouteProHome() {
 
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
-      <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
-            <span className="text-sm font-semibold tracking-tight">RoutePro</span>
-            <span className="ml-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-              {tier.toUpperCase()}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link href="/routepro/settings">
-              <Button variant="outline">Settings</Button>
-            </Link>
-            <Link href="/routepro/start">
-              <Button variant="outline">Come funziona</Button>
-            </Link>
-            <Link href="/hub">
-              <Button variant="ghost">NDW Hub</Button>
-            </Link>
-          </div>
-        </div>
-      </header>
+      <RouteProHeader title="RoutePro" tier={tier} />
 
       <section className="mx-auto w-full max-w-5xl px-4 py-8">
         <div className="mb-6">
           <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">
-            RoutePro • piano {tier.toUpperCase()}
+            RoutePro • Piano {tier}
+          </p>
+          <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+            Le tue rotte
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
+            Crea una rotta, ottimizza e usa Driver Mode (AF #, OPT #, naviga, next, mappa).
           </p>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -100,6 +85,9 @@ export default function RouteProHome() {
             )}
             <Link href="/routepro/import">
               <Button variant="outline" className="w-full sm:w-auto">Nuova rotta</Button>
+            </Link>
+            <Link href="/routepro/start">
+              <Button variant="outline" className="w-full sm:w-auto">Guida rapida</Button>
             </Link>
           </div>
         </div>
@@ -118,7 +106,19 @@ export default function RouteProHome() {
             )}
 
             {!checking && !error && routes.length === 0 && (
-              <div className="text-sm text-neutral-600">Nessuna rotta ancora.</div>
+              <div className="space-y-3">
+                <div className="text-sm text-neutral-600">
+                  Nessuna rotta ancora. Parti da Import.
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Link href="/routepro/import">
+                    <Button className="w-full sm:w-auto">Crea la prima rotta</Button>
+                  </Link>
+                  <Link href="/routepro/start">
+                    <Button variant="outline" className="w-full sm:w-auto">Vedi workflow</Button>
+                  </Link>
+                </div>
+              </div>
             )}
 
             {!checking && routes.length > 0 && (

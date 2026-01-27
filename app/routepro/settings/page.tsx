@@ -1,11 +1,11 @@
 // app/routepro/settings/page.tsx
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { hasRouteProAccess, getRouteProTier } from "@/lib/entitlement";
+import { RouteProHeader } from "@/components/routepro/RouteProHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ export default function RouteProSettingsPage() {
   const router = useRouter();
 
   const [checking, setChecking] = useState(true);
-  const [tier, setTier] = useState<string>("starter");
+  const [tier, setTier] = useState<string>("STARTER");
 
   const [keyValue, setKeyValue] = useState("");
   const [savedKeyMasked, setSavedKeyMasked] = useState<string | null>(null);
@@ -38,7 +38,7 @@ export default function RouteProSettingsPage() {
       }
 
       const t = await getRouteProTier();
-      setTier((t ?? "starter").toLowerCase());
+      setTier((t ?? "starter").toUpperCase());
 
       const { data, error } = await supabase
         .from("routepro_settings")
@@ -153,39 +153,12 @@ export default function RouteProSettingsPage() {
   }
 
   if (checking) {
-    return (
-      <main className="min-h-dvh bg-white text-neutral-900">
-        <div className="mx-auto w-full max-w-3xl px-4 py-10 text-sm text-neutral-600">
-          Caricamento...
-        </div>
-      </main>
-    );
+    return <div className="p-4 text-sm text-neutral-600">Caricamento...</div>;
   }
 
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
-      <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
-            <span className="text-sm font-semibold tracking-tight">
-              RoutePro • Settings
-            </span>
-            <span className="ml-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-              {tier.toUpperCase()}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Link href="/routepro">
-              <Button variant="ghost">RoutePro</Button>
-            </Link>
-            <Link href="/hub">
-              <Button variant="ghost">NDW Hub</Button>
-            </Link>
-          </div>
-        </div>
-      </header>
+      <RouteProHeader title="RoutePro • Settings" tier={tier} />
 
       <section className="mx-auto w-full max-w-3xl px-4 py-8">
         <Card className="rounded-2xl">
