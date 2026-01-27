@@ -26,6 +26,8 @@ export default function RouteProHome() {
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tier, setTier] = useState<string>("STARTER");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [trialLoading, setTrialLoading] = useState(false);
 
   const lastRouteId = useMemo(() => getLastRouteId(), []);
 
@@ -61,20 +63,69 @@ export default function RouteProHome() {
     })();
   }, [router]);
 
+  async function activateTrial() {
+    setMsg(null);
+    setTrialLoading(true);
+
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) throw new Error("Non autenticato.");
+
+      const res = await fetch("/api/routepro/trial", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Errore attivazione trial.");
+
+      setMsg("Trial PRO attivato ✅ (7 giorni)");
+      // refresh tier
+      const t = await getRouteProTier();
+      setTier((t ?? "starter").toUpperCase());
+    } catch (e: any) {
+      setMsg(e?.message ?? "Errore trial.");
+    } finally {
+      setTrialLoading(false);
+    }
+  }
+
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
       <RouteProHeader title="RoutePro" tier={tier} />
 
       <section className="mx-auto w-full max-w-5xl px-4 py-8">
+        {/* Trial CTA (only when Starter) */}
+        {tier === "STARTER" && (
+          <Card className="mb-6 rounded-2xl">
+            <CardHeader>
+              <CardTitle className="text-base">Prova RoutePro PRO per 7 giorni</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-neutral-600">
+              <p>
+                Attiva la prova PRO (opt-in). Alla scadenza torni automaticamente a Starter.
+              </p>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <Button onClick={activateTrial} disabled={trialLoading}>
+                  {trialLoading ? "Attivo..." : "Prova PRO 7 giorni"}
+                </Button>
+                <Link href="/hub?upgrade=routepro">
+                  <Button variant="outline">Upgrade Pro/Elite</Button>
+                </Link>
+              </div>
+              {msg && (
+                <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
+                  {msg}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         <div className="mb-6">
           <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">
             RoutePro • Piano {tier}
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-            Le tue rotte
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
-            Crea una rotta, ottimizza e usa Driver Mode (AF #, OPT #, naviga, next, mappa).
           </p>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -98,7 +149,6 @@ export default function RouteProHome() {
           </CardHeader>
           <CardContent className="space-y-2">
             {checking && <div className="text-sm text-neutral-600">Caricamento…</div>}
-
             {error && (
               <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
                 {error}
@@ -106,19 +156,7 @@ export default function RouteProHome() {
             )}
 
             {!checking && !error && routes.length === 0 && (
-              <div className="space-y-3">
-                <div className="text-sm text-neutral-600">
-                  Nessuna rotta ancora. Parti da Import.
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Link href="/routepro/import">
-                    <Button className="w-full sm:w-auto">Crea la prima rotta</Button>
-                  </Link>
-                  <Link href="/routepro/start">
-                    <Button variant="outline" className="w-full sm:w-auto">Vedi workflow</Button>
-                  </Link>
-                </div>
-              </div>
+              <div className="text-sm text-neutral-600">Nessuna rotta ancora.</div>
             )}
 
             {!checking && routes.length > 0 && (

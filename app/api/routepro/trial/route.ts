@@ -13,35 +13,23 @@ export async function POST(req: NextRequest) {
 
     const userId = u.user.id;
 
-    // Must have RoutePro entitlement (starter/pro/elite) active
+    // Must have starter access at least (starter/pro/elite)
     const { data: ent } = await supabaseAdmin
       .from("entitlements")
-      .select("id")
+      .select("product_code")
       .eq("user_id", userId)
       .eq("status", "active")
       .in("product_code", ["routepro_starter", "routepro_pro", "routepro_elite"])
       .limit(1)
       .maybeSingle();
 
-    if (!ent) {
-      return NextResponse.json({ error: "No RoutePro access" }, { status: 403 });
-    }
+    if (!ent) return NextResponse.json({ error: "No RoutePro access" }, { status: 403 });
 
-    // If already pro/elite, no need trial
-    const { data: paid } = await supabaseAdmin
-      .from("entitlements")
-      .select("product_code")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .in("product_code", ["routepro_pro", "routepro_elite"])
-      .limit(1)
-      .maybeSingle();
+    // If already paid Pro/Elite, do nothing
+    const paid = ent.product_code === "routepro_pro" || ent.product_code === "routepro_elite";
+    if (paid) return NextResponse.json({ ok: true, message: "Already Pro/Elite" });
 
-    if (paid) {
-      return NextResponse.json({ ok: true, message: "Already Pro/Elite" });
-    }
-
-    // Upsert trial 7 days
+    // Create/extend trial 7 days from now
     const expires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     await supabaseAdmin.from("routepro_trial").upsert(
