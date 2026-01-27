@@ -5,6 +5,36 @@ import Image from "next/image";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
+function TierBadge({ tier }: { tier?: string }) {
+  const t = (tier || "").toUpperCase();
+
+  if (t === "ELITE") {
+    return (
+      <span className="ml-2 rounded-full border border-amber-300/50 bg-amber-400/10 px-2 py-0.5 text-[11px] text-amber-200">
+        ELITE • Power User
+      </span>
+    );
+  }
+
+  if (t === "PRO") {
+    return (
+      <span className="ml-2 rounded-full border border-sky-400/50 bg-sky-400/10 px-2 py-0.5 text-[11px] text-sky-200">
+        PRO
+      </span>
+    );
+  }
+
+  if (t) {
+    return (
+      <span className="ml-2 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] text-white">
+        STARTER
+      </span>
+    );
+  }
+
+  return null;
+}
+
 export function RouteProHeader({
   title = "RoutePro",
   tier,
@@ -15,28 +45,16 @@ export function RouteProHeader({
   return (
     <header className="sticky top-0 z-10 border-b bg-[#050B1E]/90 backdrop-blur">
       <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3 text-white">
-        {/* LEFT */}
         <div className="flex items-center gap-3">
-          <Image
-            src="/ndw-logo.png"
-            alt="NDW Logo"
-            width={36}
-            height={36}
-            priority
-          />
-          <div className="flex flex-col leading-tight">
+          <Image src="/ndw-logo.png" alt="NDW" width={36} height={36} priority />
+          <div className="flex items-center">
             <span className="text-sm font-semibold tracking-tight text-white">
               {title}
             </span>
-            {tier && (
-              <span className="text-[11px] text-sky-300">
-                Piano {tier}
-              </span>
-            )}
+            <TierBadge tier={tier} />
           </div>
         </div>
 
-        {/* RIGHT */}
         <div className="flex items-center gap-2">
           <Link href="/routepro">
             <Button variant="ghost" className="text-white hover:bg-white/10">

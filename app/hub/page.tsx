@@ -2,6 +2,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
@@ -14,7 +15,6 @@ const ELITE_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_ELITE_URL || "";
 
 export default function HubPage() {
   const router = useRouter();
-
   const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
   const [upgradeTarget, setUpgradeTarget] = useState<string | null>(null);
@@ -52,21 +52,27 @@ export default function HubPage() {
 
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
-      <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
-            <div className="flex flex-col">
+      <header className="sticky top-0 z-10 border-b bg-[#050B1E]/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3 text-white">
+          <div className="flex items-center gap-3">
+            <Image src="/ndw-logo.png" alt="NDW" width={36} height={36} priority />
+            <div className="flex flex-col leading-tight">
               <span className="text-sm font-semibold tracking-tight">NDW Hub</span>
-              {email && <span className="text-[11px] text-neutral-500">{email}</span>}
+              {email && <span className="text-[11px] text-sky-300">{email}</span>}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <Link href="/">
-              <Button variant="ghost">Home</Button>
+              <Button variant="ghost" className="text-white hover:bg-white/10">
+                Home
+              </Button>
             </Link>
-            <Button variant="outline" onClick={onLogout}>
+            <Button
+              variant="outline"
+              className="border-sky-400 text-sky-300 hover:bg-sky-400/10"
+              onClick={onLogout}
+            >
               Logout
             </Button>
           </div>
@@ -92,9 +98,7 @@ export default function HubPage() {
               <CardTitle className="text-base">Sblocca RoutePro</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-neutral-600">
-              <p>
-                Scegli il piano. Starter è perfetto per iniziare; Pro/Elite sbloccano funzioni avanzate.
-              </p>
+              <p>Scegli il piano. Starter è perfetto per iniziare; Pro/Elite sbloccano funzioni avanzate.</p>
 
               <div className="grid gap-2 sm:grid-cols-3">
                 <a href={STARTER_URL} target="_blank" rel="noreferrer">
@@ -114,13 +118,11 @@ export default function HubPage() {
                 </a>
               </div>
 
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Link href="/routepro">
-                  <Button variant="secondary" className="w-full sm:w-auto">
-                    Riprova accesso
-                  </Button>
-                </Link>
-              </div>
+              <Link href="/routepro">
+                <Button variant="secondary" className="w-full sm:w-auto">
+                  Riprova accesso
+                </Button>
+              </Link>
 
               {(!STARTER_URL || !PRO_URL || !ELITE_URL) && (
                 <p className="text-xs text-red-600">
@@ -157,7 +159,6 @@ export default function HubPage() {
               <Link href="/routepro">
                 <Button className="w-full justify-start">Apri RoutePro</Button>
               </Link>
-
               <Button variant="outline" className="w-full justify-start" disabled>
                 Ristorazione (in arrivo)
               </Button>

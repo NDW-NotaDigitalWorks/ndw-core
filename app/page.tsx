@@ -1,4 +1,5 @@
 // app/page.tsx
+import Image from "next/image";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,21 +7,24 @@ import { Button } from "@/components/ui/button";
 export default function HomePage() {
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
-      <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-xl border bg-neutral-50" />
-            <span className="text-sm font-semibold tracking-tight">
-              NDW — Nota Digital Works
-            </span>
+      <header className="sticky top-0 z-10 border-b bg-[#050B1E]/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3 text-white">
+          <div className="flex items-center gap-3">
+            <Image src="/ndw-logo.png" alt="NDW" width={36} height={36} priority />
+            <div className="flex flex-col leading-tight">
+              <span className="text-sm font-semibold tracking-tight">NDW</span>
+              <span className="text-[11px] text-sky-300">Nota Digital Works</span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
             <Link href="/hub">
-              <Button>NDW Hub</Button>
+              <Button className="bg-sky-500 text-white hover:bg-sky-400">NDW Hub</Button>
             </Link>
             <Link href="/routepro/start">
-              <Button variant="outline">RoutePro</Button>
+              <Button variant="outline" className="border-sky-400 text-sky-300 hover:bg-sky-400/10">
+                RoutePro
+              </Button>
             </Link>
           </div>
         </div>
