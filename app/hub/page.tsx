@@ -8,7 +8,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const ROUTEPRO_CHECKOUT_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL || "";
+const STARTER_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL || "";
+const PRO_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_PRO_URL || "";
+const ELITE_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_ELITE_URL || "";
 
 export default function HubPage() {
   const router = useRouter();
@@ -80,32 +82,51 @@ export default function HubPage() {
             Dashboard operativa
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-            Turni, schede e checklist: strumenti trasversali per chi lavora ogni giorno.
+            Strumenti NDW Core + prodotti verticali come RoutePro.
           </p>
         </div>
 
         {upgradeTarget === "routepro" && (
           <Card className="mb-6 rounded-2xl border">
             <CardHeader>
-              <CardTitle className="text-base">RoutePro è bloccato</CardTitle>
+              <CardTitle className="text-base">Sblocca RoutePro</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-neutral-600">
               <p>
-                Per usare RoutePro devi avere un abbonamento attivo. Clicca sotto per completare l’acquisto su Whop.
+                Scegli il piano. Starter è perfetto per iniziare; Pro/Elite sbloccano funzioni avanzate.
               </p>
 
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <a href={ROUTEPRO_CHECKOUT_URL} target="_blank" rel="noreferrer">
-                  <Button className="w-full sm:w-auto" disabled={!ROUTEPRO_CHECKOUT_URL}>
-                    Vai al checkout RoutePro
+              <div className="grid gap-2 sm:grid-cols-3">
+                <a href={STARTER_URL} target="_blank" rel="noreferrer">
+                  <Button className="w-full" disabled={!STARTER_URL}>
+                    Starter 19€
                   </Button>
                 </a>
+                <a href={PRO_URL} target="_blank" rel="noreferrer">
+                  <Button variant="outline" className="w-full" disabled={!PRO_URL}>
+                    Pro 49€
+                  </Button>
+                </a>
+                <a href={ELITE_URL} target="_blank" rel="noreferrer">
+                  <Button variant="outline" className="w-full" disabled={!ELITE_URL}>
+                    Elite 79€
+                  </Button>
+                </a>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <Link href="/routepro">
-                  <Button variant="outline" className="w-full sm:w-auto">
+                  <Button variant="secondary" className="w-full sm:w-auto">
                     Riprova accesso
                   </Button>
                 </Link>
               </div>
+
+              {(!STARTER_URL || !PRO_URL || !ELITE_URL) && (
+                <p className="text-xs text-red-600">
+                  Mancano env checkout: NEXT_PUBLIC_WHOP_ROUTEPRO_*_URL
+                </p>
+              )}
             </CardContent>
           </Card>
         )}
@@ -117,24 +138,14 @@ export default function HubPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <Link href="/hub/shifts">
-                <Button variant="outline" className="w-full justify-start">
-                  Turni
-                </Button>
+                <Button variant="outline" className="w-full justify-start">Turni</Button>
               </Link>
               <Link href="/hub/cards">
-                <Button variant="outline" className="w-full justify-start">
-                  Schede lavoro
-                </Button>
+                <Button variant="outline" className="w-full justify-start">Schede lavoro</Button>
               </Link>
               <Link href="/hub/checklists">
-                <Button variant="outline" className="w-full justify-start">
-                  Checklist
-                </Button>
+                <Button variant="outline" className="w-full justify-start">Checklist</Button>
               </Link>
-
-              <div className="rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
-                Questi moduli sono universali e riutilizzabili per ogni verticale NDW.
-              </div>
             </CardContent>
           </Card>
 
