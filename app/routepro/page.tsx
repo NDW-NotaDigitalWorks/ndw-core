@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { hasActiveEntitlement } from "@/lib/entitlement";
+import { hasRouteProAccess, getRouteProTier } from "@/lib/entitlement";
 import { getLastRouteId } from "@/lib/routepro/prefs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ export default function RouteProHome() {
   const [checking, setChecking] = useState(true);
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [tier, setTier] = useState<string>("starter");
 
   const lastRouteId = useMemo(() => getLastRouteId(), []);
 
@@ -38,11 +39,14 @@ export default function RouteProHome() {
         return;
       }
 
-      const allowed = await hasActiveEntitlement("routepro-starter");
+      const allowed = await hasRouteProAccess();
       if (!allowed) {
         router.replace("/hub?upgrade=routepro");
         return;
       }
+
+      const t = await getRouteProTier();
+      setTier(t ?? "starter");
 
       const { data, error: err } = await supabase
         .from("routes")
@@ -64,7 +68,7 @@ export default function RouteProHome() {
             <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
             <span className="text-sm font-semibold tracking-tight">RoutePro</span>
             <span className="ml-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
-              Starter
+              {tier.toUpperCase()}
             </span>
           </div>
 
@@ -85,13 +89,7 @@ export default function RouteProHome() {
       <section className="mx-auto w-full max-w-5xl px-4 py-8">
         <div className="mb-6">
           <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">
-            RoutePro Starter
-          </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-            Le tue rotte
-          </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-neutral-600">
-            Riprendi da dove eri rimasto o crea una nuova rotta.
+            RoutePro • piano {tier.toUpperCase()}
           </p>
 
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -102,9 +100,6 @@ export default function RouteProHome() {
             )}
             <Link href="/routepro/import">
               <Button variant="outline" className="w-full sm:w-auto">Nuova rotta</Button>
-            </Link>
-            <Link href="/routepro/start">
-              <Button variant="outline" className="w-full sm:w-auto">Guida rapida</Button>
             </Link>
           </div>
         </div>
@@ -123,19 +118,7 @@ export default function RouteProHome() {
             )}
 
             {!checking && !error && routes.length === 0 && (
-              <div className="space-y-3">
-                <div className="text-sm text-neutral-600">
-                  Nessuna rotta ancora. Parti da “Nuova rotta”.
-                </div>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Link href="/routepro/import">
-                    <Button className="w-full sm:w-auto">Crea la prima rotta</Button>
-                  </Link>
-                  <Link href="/routepro/start">
-                    <Button variant="outline" className="w-full sm:w-auto">Vedi workflow</Button>
-                  </Link>
-                </div>
-              </div>
+              <div className="text-sm text-neutral-600">Nessuna rotta ancora.</div>
             )}
 
             {!checking && routes.length > 0 && (

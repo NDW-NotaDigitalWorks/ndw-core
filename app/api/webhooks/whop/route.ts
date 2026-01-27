@@ -12,12 +12,14 @@ type WhopWebhook = {
   company_id?: string | null;
 };
 
-function productIdToProductCode(productId?: string | null): string | null {
-  const routeProStarterId = process.env.WHOP_ROUTEPRO_STARTER_PRODUCT_ID;
+function planIdToProductCode(planId?: string | null): string | null {
+  const starter = process.env.WHOP_PLAN_ROUTEPRO_STARTER;
+  const pro = process.env.WHOP_PLAN_ROUTEPRO_PRO;
+  const elite = process.env.WHOP_PLAN_ROUTEPRO_ELITE;
 
-  if (productId && routeProStarterId && productId === routeProStarterId) {
-    return "routepro-starter";
-  }
+  if (planId && starter && planId === starter) return "routepro_starter";
+  if (planId && pro && planId === pro) return "routepro_pro";
+  if (planId && elite && planId === elite) return "routepro_elite";
 
   return null;
 }
@@ -60,15 +62,26 @@ async function upsertEntitlement(params: {
   if (error) throw error;
 }
 
+async function deactivateOtherRouteProPlans(userId: string, keepProductCode: string) {
+  const all = ["routepro_starter", "routepro_pro", "routepro_elite"];
+  const others = all.filter((c) => c !== keepProductCode);
+
+  const { error } = await supabaseAdmin
+    .from("entitlements")
+    .update({ status: "inactive", updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .in("product_code", others);
+
+  if (error) console.log("[WHOP] deactivateOtherRouteProPlans error:", error.message);
+}
+
 export async function POST(request: NextRequest): Promise<Response> {
   try {
     const requestBodyText = await request.text();
     const headers = Object.fromEntries(request.headers);
 
-    // Verify + parse webhook
     const webhookData = whopsdk.webhooks.unwrap(requestBodyText, { headers }) as WhopWebhook;
 
-    // Only membership events for access control
     if (
       webhookData.type !== "membership.activated" &&
       webhookData.type !== "membership.deactivated" &&
@@ -80,22 +93,26 @@ export async function POST(request: NextRequest): Promise<Response> {
     const membership = webhookData.data;
 
     const email: string | undefined = membership?.user?.email;
-    const membershipId: string | undefined = membership?.id; // mem_xxx
-    const productId: string | undefined = membership?.product?.id; // prod_xxx
-    const productTitle: string | undefined = membership?.product?.title;
+    const membershipId: string | undefined = membership?.id;
+
+    // Plan ID (different for starter/pro/elite)
+    const planId: string | undefined =
+      membership?.plan?.id ?? membership?.pricing?.id ?? membership?.plan_id;
+
+    const planTitle: string | undefined =
+      membership?.plan?.title ?? membership?.pricing?.title ?? membership?.plan?.name;
 
     if (!email) return new Response("Missing user.email", { status: 200 });
 
-    const productCode = productIdToProductCode(productId);
+    const productCode = planIdToProductCode(planId ?? null);
     if (!productCode) {
-      console.log("[WHOP] Unmapped product:", productId, productTitle);
+      console.log("[WHOP] Unmapped plan:", planId, planTitle);
       return new Response("OK", { status: 200 });
     }
 
     const userId = await getUserIdByEmail(email);
     if (!userId) {
       console.log("[WHOP] No NDW user found for email:", email);
-      // Return 200 to avoid retries: user may sign up later.
       return new Response("OK", { status: 200 });
     }
 
@@ -104,10 +121,13 @@ export async function POST(request: NextRequest): Promise<Response> {
         userId,
         productCode,
         status: "active",
-        externalCustomerId: membership?.user?.id ?? null, // user_xxx
+        externalCustomerId: membership?.user?.id ?? null,
         externalSubscriptionId: membershipId ?? null,
         endsAt: membership?.renewal_period_end ?? null,
       });
+
+      await deactivateOtherRouteProPlans(userId, productCode);
+
       return new Response("OK", { status: 200 });
     }
 
@@ -123,7 +143,6 @@ export async function POST(request: NextRequest): Promise<Response> {
       return new Response("OK", { status: 200 });
     }
 
-    // cancel_at_period_end_changed: keep active, store ends_at
     if (webhookData.type === "membership.cancel_at_period_end_changed") {
       const cancelAtPeriodEnd = !!membership?.cancel_at_period_end;
 
