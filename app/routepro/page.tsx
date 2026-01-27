@@ -26,8 +26,9 @@ export default function RouteProHome() {
   const [routes, setRoutes] = useState<RouteRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [tier, setTier] = useState<string>("STARTER");
+
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [trialLoading, setTrialLoading] = useState(false);
 
   const lastRouteId = useMemo(() => getLastRouteId(), []);
 
@@ -51,43 +52,45 @@ export default function RouteProHome() {
       const t = await getRouteProTier();
       setTier((t ?? "starter").toUpperCase());
 
-      const { data, error: err } = await supabase
-        .from("routes")
-        .select("id,name,route_date,status,total_stops,created_at")
-        .order("created_at", { ascending: false })
-        .limit(30);
-
-      if (err) setError(err.message);
-      setRoutes((data as any) ?? []);
+      await loadRoutes();
       setChecking(false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
-  async function activateTrial() {
+  async function loadRoutes() {
+    const { data, error: err } = await supabase
+      .from("routes")
+      .select("id,name,route_date,status,total_stops,created_at")
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    if (err) setError(err.message);
+    setRoutes((data as any) ?? []);
+  }
+
+  async function deleteRoute(route: RouteRow) {
     setMsg(null);
-    setTrialLoading(true);
+
+    const ok = confirm(
+      `Eliminare questa rotta?\n\n"${route.name}"\n\nVerranno eliminati anche stop e storico collegati.`
+    );
+    if (!ok) return;
+
+    setBusyId(route.id);
 
     try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token;
-      if (!token) throw new Error("Non autenticato.");
+      const { error } = await supabase.from("routes").delete().eq("id", route.id);
+      if (error) throw error;
 
-      const res = await fetch("/api/routepro/trial", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      setMsg("Rotta eliminata ✅");
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Errore attivazione trial.");
-
-      setMsg("Trial PRO attivato ✅ (7 giorni)");
-      // refresh tier
-      const t = await getRouteProTier();
-      setTier((t ?? "starter").toUpperCase());
+      // refresh list
+      await loadRoutes();
     } catch (e: any) {
-      setMsg(e?.message ?? "Errore trial.");
+      setMsg(e?.message ?? "Errore eliminazione rotta.");
     } finally {
-      setTrialLoading(false);
+      setBusyId(null);
     }
   }
 
@@ -96,31 +99,10 @@ export default function RouteProHome() {
       <RouteProHeader title="RoutePro" tier={tier} />
 
       <section className="mx-auto w-full max-w-5xl px-4 py-8">
-        {/* Trial CTA (only when Starter) */}
-        {tier === "STARTER" && (
-          <Card className="mb-6 rounded-2xl">
-            <CardHeader>
-              <CardTitle className="text-base">Prova RoutePro PRO per 7 giorni</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-neutral-600">
-              <p>
-                Attiva la prova PRO (opt-in). Alla scadenza torni automaticamente a Starter.
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button onClick={activateTrial} disabled={trialLoading}>
-                  {trialLoading ? "Attivo..." : "Prova PRO 7 giorni"}
-                </Button>
-                <Link href="/hub?upgrade=routepro">
-                  <Button variant="outline">Upgrade Pro/Elite</Button>
-                </Link>
-              </div>
-              {msg && (
-                <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
-                  {msg}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        {msg && (
+          <div className="mb-4 rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
+            {msg}
+          </div>
         )}
 
         <div className="mb-6">
@@ -135,20 +117,29 @@ export default function RouteProHome() {
               </Link>
             )}
             <Link href="/routepro/import">
-              <Button variant="outline" className="w-full sm:w-auto">Nuova rotta</Button>
+              <Button variant="outline" className="w-full sm:w-auto">
+                Nuova rotta
+              </Button>
             </Link>
             <Link href="/routepro/start">
-              <Button variant="outline" className="w-full sm:w-auto">Guida rapida</Button>
+              <Button variant="outline" className="w-full sm:w-auto">
+                Guida rapida
+              </Button>
             </Link>
           </div>
         </div>
 
         <Card className="rounded-2xl">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle className="text-base">Ultime rotte</CardTitle>
+            <Button variant="secondary" onClick={loadRoutes} disabled={checking}>
+              Aggiorna
+            </Button>
           </CardHeader>
+
           <CardContent className="space-y-2">
             {checking && <div className="text-sm text-neutral-600">Caricamento…</div>}
+
             {error && (
               <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
                 {error}
@@ -177,11 +168,22 @@ export default function RouteProHome() {
                       </div>
                     </Link>
 
-                    <Link href={`/routepro/routes/${r.id}/driver`}>
-                      <Button variant="outline" className="w-full justify-start">
-                        Driver Mode (AF # + OPT # + Naviga)
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <Link href={`/routepro/routes/${r.id}/driver`} className="sm:flex-1">
+                        <Button variant="outline" className="w-full justify-start">
+                          Driver Mode (AF # + OPT # + Naviga)
+                        </Button>
+                      </Link>
+
+                      <Button
+                        variant="outline"
+                        className="w-full sm:w-auto"
+                        onClick={() => deleteRoute(r)}
+                        disabled={busyId === r.id}
+                      >
+                        {busyId === r.id ? "Elimino..." : "Elimina"}
                       </Button>
-                    </Link>
+                    </div>
                   </div>
                 ))}
               </div>
