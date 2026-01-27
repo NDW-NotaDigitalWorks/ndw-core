@@ -176,3 +176,8 @@
     @apply bg-background text-foreground;
   }
 }
+:root {
+  --ndw-bg: #050B1E;
+  --ndw-primary: #1F6FEB;
+  --ndw-accent: #38BDF8;
+}
