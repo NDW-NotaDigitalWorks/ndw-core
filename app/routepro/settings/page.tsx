@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { hasActiveEntitlement } from "@/lib/entitlement";
+import { hasRouteProAccess, getRouteProTier } from "@/lib/entitlement";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,8 @@ export default function RouteProSettingsPage() {
   const router = useRouter();
 
   const [checking, setChecking] = useState(true);
+  const [tier, setTier] = useState<string>("starter");
+
   const [keyValue, setKeyValue] = useState("");
   const [savedKeyMasked, setSavedKeyMasked] = useState<string | null>(null);
 
@@ -23,21 +25,21 @@ export default function RouteProSettingsPage() {
 
   useEffect(() => {
     (async () => {
-      // login
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) {
         router.replace("/login");
         return;
       }
 
-      // entitlement gate (RoutePro users only)
-      const allowed = await hasActiveEntitlement("routepro-starter");
+      const allowed = await hasRouteProAccess();
       if (!allowed) {
         router.replace("/hub?upgrade=routepro");
         return;
       }
 
-      // load saved key (masked)
+      const t = await getRouteProTier();
+      setTier((t ?? "starter").toLowerCase());
+
       const { data, error } = await supabase
         .from("routepro_settings")
         .select("ors_api_key")
@@ -45,8 +47,7 @@ export default function RouteProSettingsPage() {
         .maybeSingle();
 
       if (!error && data?.ors_api_key) {
-        const k = String(data.ors_api_key);
-        setSavedKeyMasked(maskKey(k));
+        setSavedKeyMasked(maskKey(String(data.ors_api_key)));
       } else {
         setSavedKeyMasked(null);
       }
@@ -78,12 +79,8 @@ export default function RouteProSettingsPage() {
         return;
       }
 
-      // upsert settings
       const { error } = await supabase.from("routepro_settings").upsert(
-        {
-          user_id: userData.user.id,
-          ors_api_key: k,
-        },
+        { user_id: userData.user.id, ors_api_key: k },
         { onConflict: "user_id" }
       );
 
@@ -117,7 +114,7 @@ export default function RouteProSettingsPage() {
       if (error) throw error;
 
       setSavedKeyMasked(null);
-      setMsg("ORS Key rimossa ✅ (torni a usare la key NDW come fallback)");
+      setMsg("ORS Key rimossa ✅ (fallback su key NDW)");
     } catch (e: any) {
       setMsg(e?.message ?? "Errore rimozione.");
     } finally {
@@ -136,7 +133,6 @@ export default function RouteProSettingsPage() {
         return;
       }
 
-      // quick test: geocode a simple address using ORS
       const url = new URL("https://api.openrouteservice.org/geocode/search");
       url.searchParams.set("api_key", k);
       url.searchParams.set("text", "Milano");
@@ -175,11 +171,14 @@ export default function RouteProSettingsPage() {
             <span className="text-sm font-semibold tracking-tight">
               RoutePro • Settings
             </span>
+            <span className="ml-2 rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
+              {tier.toUpperCase()}
+            </span>
           </div>
 
           <div className="flex items-center gap-2">
             <Link href="/routepro">
-              <Button variant="ghost">Le mie rotte</Button>
+              <Button variant="ghost">RoutePro</Button>
             </Link>
             <Link href="/hub">
               <Button variant="ghost">NDW Hub</Button>
@@ -194,45 +193,33 @@ export default function RouteProSettingsPage() {
             <CardTitle className="text-base">ORS API Key personale</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-neutral-700">
-            <p>
-              Se inserisci la tua ORS key, l’ottimizzazione userà la tua quota.
-              Se non la inserisci, RoutePro userà la key NDW (fallback).
-            </p>
-
             <div className="rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
               {savedKeyMasked
                 ? <>Key salvata: <b>{savedKeyMasked}</b></>
-                : <>Nessuna key salvata (stai usando la key NDW).</>}
+                : <>Nessuna key salvata (fallback su key NDW).</>}
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Incolla ORS API Key</label>
-              <Input
-                value={keyValue}
-                onChange={(e) => setKeyValue(e.target.value)}
-                placeholder="es. 5b3ce3597851110001cf6248..."
-              />
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button variant="outline" onClick={testKey} disabled={testing}>
-                  {testing ? "Test..." : "Test key"}
-                </Button>
-                <Button onClick={saveKey} disabled={saving}>
-                  {saving ? "Salvo..." : "Salva key"}
-                </Button>
-                <Button variant="secondary" onClick={removeKey} disabled={saving}>
-                  Rimuovi key
-                </Button>
-              </div>
+            <label className="text-sm font-medium">Incolla ORS API Key</label>
+            <Input
+              value={keyValue}
+              onChange={(e) => setKeyValue(e.target.value)}
+              placeholder="5b3ce3597851110001cf6248..."
+            />
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button variant="outline" onClick={testKey} disabled={testing}>
+                {testing ? "Test..." : "Test key"}
+              </Button>
+              <Button onClick={saveKey} disabled={saving}>
+                {saving ? "Salvo..." : "Salva key"}
+              </Button>
+              <Button variant="secondary" onClick={removeKey} disabled={saving}>
+                Rimuovi key
+              </Button>
             </div>
 
             <div className="rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
-              Come ottenere la key:
-              <ol className="mt-2 list-decimal pl-5">
-                <li>Vai su openrouteservice.org</li>
-                <li>Crea account (gratis)</li>
-                <li>Dashboard → API Keys → Create key</li>
-                <li>Copia e incolla qui</li>
-              </ol>
+              Come ottenerla: openrouteservice.org → account → API Keys → Create key → copia/incolla.
             </div>
 
             {msg && (
