@@ -10,6 +10,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
+type SettingsRow = {
+  ors_api_key: string | null;
+
+  work_start_time: string | null;
+  target_end_time: string | null;
+  max_end_time: string | null;
+  break_minutes: number | null;
+  discontinuity_minutes: number | null;
+};
+
 export default function RouteProSettingsPage() {
   const router = useRouter();
 
@@ -18,6 +28,13 @@ export default function RouteProSettingsPage() {
 
   const [keyValue, setKeyValue] = useState("");
   const [savedKeyMasked, setSavedKeyMasked] = useState<string | null>(null);
+
+  // Workday settings
+  const [workStart, setWorkStart] = useState("09:10");
+  const [targetEnd, setTargetEnd] = useState("17:45");
+  const [maxEnd, setMaxEnd] = useState("18:04");
+  const [breakMin, setBreakMin] = useState(30);
+  const [discMin, setDiscMin] = useState(28);
 
   const [msg, setMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -42,14 +59,21 @@ export default function RouteProSettingsPage() {
 
       const { data, error } = await supabase
         .from("routepro_settings")
-        .select("ors_api_key")
+        .select("ors_api_key, work_start_time, target_end_time, max_end_time, break_minutes, discontinuity_minutes")
         .eq("user_id", userData.user.id)
         .maybeSingle();
 
-      if (!error && data?.ors_api_key) {
-        setSavedKeyMasked(maskKey(String(data.ors_api_key)));
-      } else {
-        setSavedKeyMasked(null);
+      if (!error && data) {
+        const row = data as any as SettingsRow;
+
+        if (row.ors_api_key) setSavedKeyMasked(maskKey(String(row.ors_api_key)));
+        else setSavedKeyMasked(null);
+
+        setWorkStart(row.work_start_time ?? "09:10");
+        setTargetEnd(row.target_end_time ?? "17:45");
+        setMaxEnd(row.max_end_time ?? "18:04");
+        setBreakMin(row.break_minutes ?? 30);
+        setDiscMin(row.discontinuity_minutes ?? 28);
       }
 
       setChecking(false);
@@ -62,7 +86,7 @@ export default function RouteProSettingsPage() {
     return `${trimmed.slice(0, 4)}********${trimmed.slice(-4)}`;
   }
 
-  async function saveKey() {
+  async function saveOrsKey() {
     setMsg(null);
     setSaving(true);
 
@@ -96,7 +120,7 @@ export default function RouteProSettingsPage() {
     }
   }
 
-  async function removeKey() {
+  async function removeOrsKey() {
     setMsg(null);
     setSaving(true);
 
@@ -152,15 +176,47 @@ export default function RouteProSettingsPage() {
     }
   }
 
-  if (checking) {
-    return <div className="p-4 text-sm text-neutral-600">Caricamento...</div>;
+  async function saveWorkday() {
+    setMsg(null);
+    setSaving(true);
+
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        router.replace("/login");
+        return;
+      }
+
+      const payload = {
+        user_id: userData.user.id,
+        work_start_time: workStart,
+        target_end_time: targetEnd,
+        max_end_time: maxEnd,
+        break_minutes: breakMin,
+        discontinuity_minutes: discMin,
+      };
+
+      const { error } = await supabase
+        .from("routepro_settings")
+        .upsert(payload, { onConflict: "user_id" });
+
+      if (error) throw error;
+
+      setMsg("Orari salvati ✅ (Driver Mode userà queste info per il rientro)");
+    } catch (e: any) {
+      setMsg(e?.message ?? "Errore salvataggio orari.");
+    } finally {
+      setSaving(false);
+    }
   }
+
+  if (checking) return <div className="p-4 text-sm text-neutral-600">Caricamento...</div>;
 
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
       <RouteProHeader title="RoutePro • Settings" tier={tier} />
 
-      <section className="mx-auto w-full max-w-3xl px-4 py-8">
+      <section className="mx-auto w-full max-w-3xl px-4 py-8 space-y-4">
         <Card className="rounded-2xl">
           <CardHeader>
             <CardTitle className="text-base">ORS API Key personale</CardTitle>
@@ -173,20 +229,16 @@ export default function RouteProSettingsPage() {
             </div>
 
             <label className="text-sm font-medium">Incolla ORS API Key</label>
-            <Input
-              value={keyValue}
-              onChange={(e) => setKeyValue(e.target.value)}
-              placeholder="5b3ce3597851110001cf6248..."
-            />
+            <Input value={keyValue} onChange={(e) => setKeyValue(e.target.value)} placeholder="5b3ce359..." />
 
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button variant="outline" onClick={testKey} disabled={testing}>
                 {testing ? "Test..." : "Test key"}
               </Button>
-              <Button onClick={saveKey} disabled={saving}>
+              <Button onClick={saveOrsKey} disabled={saving}>
                 {saving ? "Salvo..." : "Salva key"}
               </Button>
-              <Button variant="secondary" onClick={removeKey} disabled={saving}>
+              <Button variant="secondary" onClick={removeOrsKey} disabled={saving}>
                 Rimuovi key
               </Button>
             </div>
@@ -194,6 +246,44 @@ export default function RouteProSettingsPage() {
             <div className="rounded-2xl border bg-neutral-50 p-3 text-xs text-neutral-600">
               Come ottenerla: openrouteservice.org → account → API Keys → Create key → copia/incolla.
             </div>
+          </CardContent>
+        </Card>
+
+        <Card className="rounded-2xl">
+          <CardHeader>
+            <CardTitle className="text-base">Orari lavoro & rientro</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-neutral-700">
+            <p className="text-sm text-neutral-600">
+              Driver Mode userà queste info per stimare se rientri in orario (stima, non garanzia).
+            </p>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-neutral-600">Inizio lavoro</label>
+                <Input type="time" value={workStart} onChange={(e) => setWorkStart(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-neutral-600">Target rientro</label>
+                <Input type="time" value={targetEnd} onChange={(e) => setTargetEnd(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-neutral-600">Massimo rientro</label>
+                <Input type="time" value={maxEnd} onChange={(e) => setMaxEnd(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-neutral-600">Pausa (min)</label>
+                <Input type="number" value={breakMin} onChange={(e) => setBreakMin(Number(e.target.value || 0))} />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-neutral-600">Discontinuità (min)</label>
+                <Input type="number" value={discMin} onChange={(e) => setDiscMin(Number(e.target.value || 0))} />
+              </div>
+            </div>
+
+            <Button onClick={saveWorkday} disabled={saving}>
+              {saving ? "Salvo..." : "Salva orari"}
+            </Button>
 
             {msg && (
               <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
