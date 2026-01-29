@@ -7,9 +7,11 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { StopCard } from "@/components/routepro/StopCard";
 import { RouteMap } from "@/components/routepro/RouteMap";
+import { StatsSummary } from "@/components/routepro/StatsSummary";
 import { Button } from "@/components/ui/button";
 import { openNavigation, setNavPref, type NavApp } from "@/lib/routepro/navigation";
 import { setLastRouteId, getDriverView, setDriverView } from "@/lib/routepro/prefs";
+import { computeRouteStats } from "@/lib/routepro/stats";
 
 type StopRow = {
   id: string;
@@ -23,6 +25,27 @@ type StopRow = {
   is_done: boolean;
 };
 
+function storageKeyStart(routeId: string) {
+  return `ndw_routepro_started_at_${routeId}`;
+}
+
+function getOrSetStartedAt(routeId: string): Date {
+  const key = storageKeyStart(routeId);
+  const existing = typeof window !== "undefined" ? localStorage.getItem(key) : null;
+  if (existing) return new Date(existing);
+
+  const now = new Date();
+  if (typeof window !== "undefined") localStorage.setItem(key, now.toISOString());
+  return now;
+}
+
+function resetStartedAt(routeId: string): Date {
+  const key = storageKeyStart(routeId);
+  const now = new Date();
+  if (typeof window !== "undefined") localStorage.setItem(key, now.toISOString());
+  return now;
+}
+
 export default function DriverModePage() {
   const router = useRouter();
   const params = useParams<{ routeId: string }>();
@@ -35,6 +58,8 @@ export default function DriverModePage() {
   const [navApp, setNavApp] = useState<NavApp>("google");
   const [view, setView] = useState<"list" | "map">("list");
 
+  const [startedAt, setStartedAt] = useState<Date | null>(null);
+
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -43,6 +68,9 @@ export default function DriverModePage() {
 
     // load per-route view preference
     setView(getDriverView(routeId));
+
+    // init start time (first time you open driver mode for this route)
+    setStartedAt(getOrSetStartedAt(routeId));
 
     // load nav preference
     const v =
@@ -96,7 +124,7 @@ export default function DriverModePage() {
 
       setStops(list);
 
-      const firstPending = list.find((s) => !s.is_done) ?? list[0];
+      const firstPending = list.find((s) => s.stop_type === "delivery" && !s.is_done) ?? list.find((s) => !s.is_done) ?? list[0];
       setActiveStopId(firstPending?.id ?? null);
     }
 
@@ -105,14 +133,31 @@ export default function DriverModePage() {
 
   const orderedStops = useMemo(() => stops, [stops]);
 
+  const deliveryStops = useMemo(
+    () => orderedStops.filter((s) => s.stop_type === "delivery"),
+    [orderedStops]
+  );
+
+  const totalDeliveries = deliveryStops.length;
+
+  const deliveriesDone = useMemo(
+    () => deliveryStops.filter((s) => s.is_done).length,
+    [deliveryStops]
+  );
+
+  const routeCompleted = useMemo(() => {
+    // Completed when all deliveries are done (pickup/return excluded from KPI)
+    return totalDeliveries > 0 && deliveriesDone === totalDeliveries;
+  }, [totalDeliveries, deliveriesDone]);
+
   const activeStop = useMemo(
     () => orderedStops.find((s) => s.id === activeStopId) ?? null,
     [orderedStops, activeStopId]
   );
 
-  const nextPendingStop = useMemo(
-    () => orderedStops.find((s) => !s.is_done) ?? null,
-    [orderedStops]
+  const nextPendingDelivery = useMemo(
+    () => deliveryStops.find((s) => !s.is_done) ?? null,
+    [deliveryStops]
   );
 
   const mapStops = useMemo(() => {
@@ -130,24 +175,43 @@ export default function DriverModePage() {
       }));
   }, [orderedStops, activeStopId]);
 
-  async function toggleDone(stopId: string, nextValue: boolean) {
-    setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s)));
+  const stats = useMemo(() => {
+    if (!startedAt) return null;
+    if (!routeCompleted) return null;
 
-    const { error } = await supabase.from("route_stops").update({ is_done: nextValue }).eq("id", stopId);
+    return computeRouteStats({
+      totalStops: totalDeliveries,
+      startedAt,
+      endedAt: new Date(),
+    });
+  }, [startedAt, routeCompleted, totalDeliveries]);
+
+  async function toggleDone(stopId: string, nextValue: boolean) {
+    setStops((prev) =>
+      prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s))
+    );
+
+    const { error } = await supabase
+      .from("route_stops")
+      .update({ is_done: nextValue })
+      .eq("id", stopId);
 
     if (error) {
-      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s)));
+      setStops((prev) =>
+        prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s))
+      );
       return;
     }
 
     if (nextValue) {
-      const pending = orderedStops.find((s) => !s.is_done && s.id !== stopId);
+      // jump to next pending delivery if any
+      const pending = orderedStops.find((s) => s.stop_type === "delivery" && !s.is_done && s.id !== stopId);
       if (pending) setActiveStopId(pending.id);
     }
   }
 
   function goToNextPending() {
-    if (nextPendingStop) setActiveStopId(nextPendingStop.id);
+    if (nextPendingDelivery) setActiveStopId(nextPendingDelivery.id);
   }
 
   function navToActive() {
@@ -156,14 +220,19 @@ export default function DriverModePage() {
   }
 
   function navToNextPending() {
-    if (!nextPendingStop) return;
-    openNavigation({ lat: nextPendingStop.lat, lng: nextPendingStop.lng, address: nextPendingStop.address });
-    setActiveStopId(nextPendingStop.id);
+    if (!nextPendingDelivery) return;
+    openNavigation({ lat: nextPendingDelivery.lat, lng: nextPendingDelivery.lng, address: nextPendingDelivery.address });
+    setActiveStopId(nextPendingDelivery.id);
   }
 
   function onSetNav(app: NavApp) {
     setNavApp(app);
     setNavPref(app);
+  }
+
+  function onResetTimer() {
+    const now = resetStartedAt(routeId);
+    setStartedAt(now);
   }
 
   if (loading) return <div className="p-4 text-sm text-neutral-600">Caricamento Driver Mode…</div>;
@@ -182,13 +251,18 @@ export default function DriverModePage() {
                 </div>
               )}
               <div className="mt-1 text-[11px] text-neutral-500">
-                Vista: <b>{view === "list" ? "LISTA" : "MAPPA"}</b>
+                Consegne: <b>{deliveriesDone}/{totalDeliveries}</b>
               </div>
             </div>
 
-            <Link href={`/routepro/routes/${routeId}`}>
-              <Button variant="outline">Dettaglio</Button>
-            </Link>
+            <div className="flex gap-2">
+              <Link href={`/routepro/routes/${routeId}`}>
+                <Button variant="outline">Dettaglio</Button>
+              </Link>
+              <Button variant="outline" onClick={onResetTimer}>
+                Reset tempo
+              </Button>
+            </div>
           </div>
 
           <div className="mt-2 grid grid-cols-2 gap-2">
@@ -197,7 +271,7 @@ export default function DriverModePage() {
           </div>
 
           <div className="mt-2">
-            <Button onClick={navToNextPending} disabled={!nextPendingStop}>
+            <Button onClick={navToNextPending} disabled={!nextPendingDelivery}>
               Naviga prossimo non fatto
             </Button>
           </div>
@@ -235,6 +309,9 @@ export default function DriverModePage() {
             <Button variant="secondary" className="w-full" onClick={load}>Aggiorna</Button>
           </div>
         </div>
+
+        {/* Stats at end of route */}
+        {stats && <StatsSummary stats={stats} />}
 
         {view === "map" ? (
           <RouteMap stops={mapStops} />
