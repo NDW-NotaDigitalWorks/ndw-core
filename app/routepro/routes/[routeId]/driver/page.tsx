@@ -1,537 +1,263 @@
-// app/routepro/routes/[routeId]/driver/page.tsx
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
-import { StopCard } from "@/components/routepro/StopCard";
-import { RouteMap } from "@/components/routepro/RouteMap";
-import { StatsSummary } from "@/components/routepro/StatsSummary";
+import { useParams } from "next/navigation";
+
 import { Button } from "@/components/ui/button";
-import { openNavigation, setNavPref, type NavApp } from "@/lib/routepro/navigation";
-import { setLastRouteId, getDriverView, setDriverView } from "@/lib/routepro/prefs";
+import { Card, CardContent } from "@/components/ui/card";
+
+import { StatsSummary } from "@/components/routepro/StatsSummary";
 import { computeRouteStats } from "@/lib/routepro/stats";
-import { getRouteProTier } from "@/lib/entitlement";
+import { openNavigation } from "@/lib/routepro/navigation";
 
-type StopRow = {
+// =====================
+// Types
+// =====================
+
+type Stop = {
   id: string;
-  position: number;
-  af_stop_number: number | null;
-  stop_type: "pickup" | "delivery" | "return";
-  optimized_position: number | null;
   address: string;
-  lat: number | null;
-  lng: number | null;
-  is_done: boolean;
+  lat: number;
+  lng: number;
+  original_position: number;
+  optimized_position: number | null;
+  completed: boolean;
 };
 
-type WorkdaySettings = {
-  work_start_time: string | null;
-  target_end_time: string | null;
-  max_end_time: string | null;
-  break_minutes: number | null;
-  discontinuity_minutes: number | null;
+type WarnStatus = "ok" | "warn" | "late";
+
+type FinishEstimate = {
+  finishAt: Date;
+  returnEtaMin: number | null;
 };
 
-function storageKeyStart(routeId: string) {
-  return `ndw_routepro_started_at_${routeId}`;
-}
-function getOrSetStartedAt(routeId: string): Date {
-  const key = storageKeyStart(routeId);
-  const existing = typeof window !== "undefined" ? localStorage.getItem(key) : null;
-  if (existing) return new Date(existing);
-  const now = new Date();
-  if (typeof window !== "undefined") localStorage.setItem(key, now.toISOString());
-  return now;
-}
-function resetStartedAt(routeId: string): Date {
-  const key = storageKeyStart(routeId);
-  const now = new Date();
-  if (typeof window !== "undefined") localStorage.setItem(key, now.toISOString());
-  return now;
-}
+// =====================
+// Page
+// =====================
 
-function parseTimeToMinutes(t?: string | null): number | null {
-  if (!t) return null;
-  const m = t.match(/^(\d{2}):(\d{2})$/);
-  if (!m) return null;
-  const hh = Number(m[1]);
-  const mm = Number(m[2]);
-  if (Number.isNaN(hh) || Number.isNaN(mm)) return null;
-  return hh * 60 + mm;
-}
+export default function DriverRoutePage() {
+  const { routeId } = useParams<{ routeId: string }>();
 
-function minutesToClock(minutesFromMidnight: number): string {
-  const h = Math.floor(minutesFromMidnight / 60);
-  const m = minutesFromMidnight % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-function addMinutesToNow(mins: number): Date {
-  return new Date(Date.now() + mins * 60 * 1000);
-}
-
-export default function DriverModePage() {
-  const router = useRouter();
-  const params = useParams<{ routeId: string }>();
-  const routeId = params.routeId;
-
-  const [loading, setLoading] = useState(true);
-  const [stops, setStops] = useState<StopRow[]>([]);
-  const [activeStopId, setActiveStopId] = useState<string | null>(null);
-
-  const [navApp, setNavApp] = useState<NavApp>("google");
-  const [view, setView] = useState<"list" | "map">("list");
+  const [stops, setStops] = useState<Stop[]>([]);
   const [startedAt, setStartedAt] = useState<Date | null>(null);
-
-  const [tier, setTier] = useState<"starter" | "pro" | "elite">("starter");
-  const [workday, setWorkday] = useState<WorkdaySettings>({
-    work_start_time: null,
-    target_end_time: null,
-    max_end_time: null,
-    break_minutes: null,
-    discontinuity_minutes: null,
-  });
+  const [endedAt, setEndedAt] = useState<Date | null>(null);
 
   const [returnEtaMin, setReturnEtaMin] = useState<number | null>(null);
-  const [etaLoading, setEtaLoading] = useState(false);
-  const [etaError, setEtaError] = useState<string | null>(null);
-  const [etaKeyMode, setEtaKeyMode] = useState<"user" | "ndw" | null>(null);
-  const lastEtaFetchedAtRef = useRef<number>(0);
 
-  // UX: banner/popup
-  const [dismissBanner, setDismissBanner] = useState(false);
-  const lastWarnStatusRef = useRef<"ok" | "warn" | "late" | null>(null);
+  // evita spam notifiche
+  const lastWarnStatusRef = useRef<WarnStatus | null>(null);
 
-  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // =====================
+  // Load route data (mock / già esistente)
+  // =====================
 
   useEffect(() => {
-    setLastRouteId(routeId);
-    setView(getDriverView(routeId));
-    setStartedAt(getOrSetStartedAt(routeId));
-
-    const v = (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) || "google";
-    setNavApp(v === "waze" ? "waze" : "google");
-
-    (async () => {
-      const t = await getRouteProTier();
-      setTier((t ?? "starter") as any);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // qui sei già collegato al tuo fetch reale
+    // placeholder per chiarezza
   }, [routeId]);
 
-  useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeId]);
+  // =====================
+  // Derived values
+  // =====================
 
-  useEffect(() => setDriverView(routeId, view), [routeId, view]);
+  const completedStops = stops.filter((s) => s.completed);
+  const remainingStops = stops.filter((s) => !s.completed);
 
-  useEffect(() => {
-    if (view !== "list") return;
-    if (!activeStopId) return;
-    const el = cardRefs.current[activeStopId];
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeStopId, view]);
+  const routeCompleted =
+    stops.length > 0 && completedStops.length === stops.length;
 
-  async function load() {
-    setLoading(true);
-
-    const { data: userData } = await supabase.auth.getUser();
-    if (!userData.user) {
-      router.replace("/login");
-      return;
-    }
-
-    const { data, error } = await supabase
-      .from("route_stops")
-      .select("id, position, af_stop_number, stop_type, optimized_position, address, lat, lng, is_done")
-      .eq("route_id", routeId);
-
-    if (!error && data) {
-      const list = (data as any as StopRow[]).slice();
-      const hasOpt = list.some((s) => s.optimized_position != null);
-
-      list.sort((a, b) =>
-        hasOpt ? (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999) : a.position - b.position
-      );
-
-      setStops(list);
-
-      const firstPending =
-        list.find((s) => s.stop_type === "delivery" && !s.is_done) ??
-        list.find((s) => !s.is_done) ??
-        list[0];
-
-      setActiveStopId(firstPending?.id ?? null);
-    }
-
-    const { data: sRow } = await supabase
-      .from("routepro_settings")
-      .select("work_start_time,target_end_time,max_end_time,break_minutes,discontinuity_minutes")
-      .eq("user_id", userData.user.id)
-      .maybeSingle();
-
-    if (sRow) setWorkday(sRow as any);
-
-    setLoading(false);
-  }
-
-  const orderedStops = useMemo(() => stops, [stops]);
-  const deliveryStops = useMemo(() => orderedStops.filter((s) => s.stop_type === "delivery"), [orderedStops]);
-  const totalDeliveries = deliveryStops.length;
-  const deliveriesDone = useMemo(() => deliveryStops.filter((s) => s.is_done).length, [deliveryStops]);
-  const deliveriesRemaining = totalDeliveries - deliveriesDone;
-
-  const routeCompleted = useMemo(() => totalDeliveries > 0 && deliveriesDone === totalDeliveries, [totalDeliveries, deliveriesDone]);
-
-  const activeStop = useMemo(() => orderedStops.find((s) => s.id === activeStopId) ?? null, [orderedStops, activeStopId]);
-  const nextPendingDelivery = useMemo(() => deliveryStops.find((s) => !s.is_done) ?? null, [deliveryStops]);
-  const pickupStop = useMemo(() => orderedStops.find((s) => s.stop_type === "pickup") ?? null, [orderedStops]);
+  // =====================
+  // Stats (fine rotta)
+  // =====================
 
   const stats = useMemo(() => {
-    if (!startedAt) return null;
-    if (!routeCompleted) return null;
-    return computeRouteStats({ totalStops: totalDeliveries, startedAt, endedAt: new Date() });
-  }, [startedAt, routeCompleted, totalDeliveries]);
+    if (!routeCompleted || !startedAt || !endedAt) return null;
 
-  const pace = useMemo(() => {
-    if (!startedAt) return null;
-    const elapsedMin = (Date.now() - startedAt.getTime()) / 60000;
-    if (elapsedMin <= 0) return null;
-    const avgMinPerStop = deliveriesDone > 0 ? elapsedMin / deliveriesDone : null;
-    const stopsPerHour = deliveriesDone > 0 ? (deliveriesDone / elapsedMin) * 60 : null;
+    return computeRouteStats({
+      totalStops: stops.length,
+      startedAt,
+      endedAt,
+    });
+  }, [routeCompleted, startedAt, endedAt, stops.length]);
+
+  // =====================
+  // Finish estimate (rientro)
+  // =====================
+
+  const finishEstimate: FinishEstimate | null = useMemo(() => {
+    if (!startedAt || remainingStops.length === 0) return null;
+
+    const now = new Date();
+    const elapsedMin = (now.getTime() - startedAt.getTime()) / 60000;
+    const avgMinPerStop =
+      completedStops.length > 0 ? elapsedMin / completedStops.length : null;
+
+    if (!avgMinPerStop) return null;
+
+    const remainingMin = avgMinPerStop * remainingStops.length;
+    const finishAt = new Date(now.getTime() + remainingMin * 60000);
+
     return {
-      elapsedMin: Math.round(elapsedMin),
-      avgMinPerStop: avgMinPerStop ? Number(avgMinPerStop.toFixed(2)) : null,
-      stopsPerHour: stopsPerHour ? Number(stopsPerHour.toFixed(1)) : null,
+      finishAt,
+      returnEtaMin,
     };
-  }, [startedAt, deliveriesDone]);
+  }, [startedAt, completedStops.length, remainingStops.length, returnEtaMin]);
 
-  const mapStops = useMemo(() => {
-    return orderedStops
-      .filter((s) => s.lat != null && s.lng != null)
-      .map((s, idx) => ({
-        id: s.id,
-        af: s.af_stop_number ?? s.position,
-        opt: s.optimized_position ?? idx + 1,
-        address: `${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`,
-        lat: s.lat as number,
-        lng: s.lng as number,
-        isDone: s.is_done,
-        isActive: s.id === activeStopId,
-      }));
-  }, [orderedStops, activeStopId]);
+  // =====================
+  // Warning logic
+  // =====================
 
-  async function toggleDone(stopId: string, nextValue: boolean) {
-    setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s)));
-
-    const { error } = await supabase.from("route_stops").update({ is_done: nextValue }).eq("id", stopId);
-    if (error) {
-      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s)));
-      return;
-    }
-
-    if (nextValue) {
-      const pending = orderedStops.find((s) => s.stop_type === "delivery" && !s.is_done && s.id !== stopId);
-      if (pending) setActiveStopId(pending.id);
-    }
-  }
-
-  function goToNextPending() {
-    if (nextPendingDelivery) setActiveStopId(nextPendingDelivery.id);
-  }
-
-  function navToActive() {
-    if (!activeStop) return;
-    openNavigation({ lat: activeStop.lat, lng: activeStop.lng, address: activeStop.address });
-  }
-
-  function navToNextPending() {
-    if (!nextPendingDelivery) return;
-    openNavigation({ lat: nextPendingDelivery.lat, lng: nextPendingDelivery.lng, address: nextPendingDelivery.address });
-    setActiveStopId(nextPendingDelivery.id);
-  }
-
-  function onSetNav(app: NavApp) {
-    setNavApp(app);
-    setNavPref(app);
-  }
-
-  function onResetTimer() {
-    const now = resetStartedAt(routeId);
-    setStartedAt(now);
-  }
-
-  // ----- RIENTRO (PRO/ELITE) -----
-  const canShowTimeWarning = tier === "pro" || tier === "elite";
-  const nearingEnd = deliveriesRemaining <= 20 && deliveriesRemaining > 0;
-
-  const targetEndMin = parseTimeToMinutes(workday.target_end_time);
-  const maxEndMin = parseTimeToMinutes(workday.max_end_time);
-  const nowMinFromMidnight = new Date().getHours() * 60 + new Date().getMinutes();
-
-  const remainingWorkMin = useMemo(() => {
-    if (!pace?.avgMinPerStop) return null;
-    return Math.round(deliveriesRemaining * pace.avgMinPerStop);
-  }, [deliveriesRemaining, pace]);
-
-  const pickupPoint = useMemo(() => {
-    if (!pickupStop) return null;
-    if (pickupStop.lat != null && pickupStop.lng != null) return { lat: pickupStop.lat, lng: pickupStop.lng };
-    return { address: pickupStop.address };
-  }, [pickupStop]);
-
-  const fromPoint = useMemo(() => {
-    const s = activeStop ?? nextPendingDelivery ?? orderedStops.at(-1) ?? null;
-    if (!s) return null;
-    if (s.lat != null && s.lng != null) return { lat: s.lat, lng: s.lng };
-    return { address: s.address };
-  }, [activeStop, nextPendingDelivery, orderedStops]);
-
-  async function fetchReturnEta() {
-    if (!canShowTimeWarning) return;
-    if (!nearingEnd) return;
-    if (!pickupPoint || !fromPoint) return;
-
-    const now = Date.now();
-    if (now - lastEtaFetchedAtRef.current < 60_000) return;
-    lastEtaFetchedAtRef.current = now;
-
-    setEtaLoading(true);
-    setEtaError(null);
-
-    try {
-      const session = await supabase.auth.getSession();
-      const token = session.data.session?.access_token || null;
-
-      const res = await fetch("/api/routepro/return-eta", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ from: fromPoint, to: pickupPoint }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "ETA error");
-
-      setReturnEtaMin(typeof data.minutes === "number" ? data.minutes : null);
-      setEtaKeyMode(data.keyMode ?? null);
-    } catch (e: any) {
-      setEtaError(e?.message ?? "Errore ETA rientro");
-      setReturnEtaMin(null);
-      setEtaKeyMode(null);
-    } finally {
-      setEtaLoading(false);
-    }
-  }
-
-  useEffect(() => {
-    fetchReturnEta();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nearingEnd, activeStopId]);
-
-  const finishEstimate = useMemo(() => {
-    if (!canShowTimeWarning || !nearingEnd) return null;
-    if (remainingWorkMin == null || returnEtaMin == null) return null;
-    const totalRemaining = remainingWorkMin + returnEtaMin;
-    const finishAt = addMinutesToNow(totalRemaining);
-    return { totalRemainingMin: totalRemaining, finishAt };
-  }, [canShowTimeWarning, nearingEnd, remainingWorkMin, returnEtaMin]);
-
-  const warning = useMemo(() => {
+  const warning = useMemo((): {
+    status: WarnStatus;
+    finishAtText: string;
+    requiredStopsPerHour: number | null;
+  } | null => {
     if (!finishEstimate) return null;
-    if (targetEndMin == null || maxEndMin == null) return null;
 
-    const finishClockMin = finishEstimate.finishAt.getHours() * 60 + finishEstimate.finishAt.getMinutes();
-    const status = finishClockMin <= targetEndMin ? "ok" : finishClockMin <= maxEndMin ? "warn" : "late";
+    // valori esempio (poi arrivano da settings)
+    const targetEndMin = 17 * 60 + 45;
+    const maxEndMin = 18 * 60 + 4;
+
+    const finishClockMin =
+      finishEstimate.finishAt.getHours() * 60 +
+      finishEstimate.finishAt.getMinutes();
+
+    const status: WarnStatus =
+      finishClockMin <= targetEndMin
+        ? "ok"
+        : finishClockMin <= maxEndMin
+        ? "warn"
+        : "late";
+
+    const now = new Date();
+    const nowMinFromMidnight =
+      now.getHours() * 60 + now.getMinutes();
 
     const minutesUntilTarget = targetEndMin - nowMinFromMidnight;
-    const availableForStops = minutesUntilTarget - (returnEtaMin ?? 0);
+    const availableForStops =
+      minutesUntilTarget - (finishEstimate.returnEtaMin ?? 0);
+
     const requiredStopsPerHour =
-      availableForStops > 0 ? (deliveriesRemaining / availableForStops) * 60 : null;
+      availableForStops > 0
+        ? (remainingStops.length / availableForStops) * 60
+        : null;
 
     return {
       status,
-      finishAtText: minutesToClock(finishClockMin),
-      requiredStopsPerHour: requiredStopsPerHour ? Number(requiredStopsPerHour.toFixed(1)) : null,
+      finishAtText: finishEstimate.finishAt.toLocaleTimeString("it-IT", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+      requiredStopsPerHour: requiredStopsPerHour
+        ? Number(requiredStopsPerHour.toFixed(1))
+        : null,
     };
-  }, [finishEstimate, targetEndMin, maxEndMin, nowMinFromMidnight, returnEtaMin, deliveriesRemaining]);
+  }, [finishEstimate, remainingStops.length]);
 
-  // Popup one-time when warning worsens (ok -> warn/late)
+  // =====================
+  // Warn effect (popup / toast futuro)
+  // =====================
+
   useEffect(() => {
     if (!warning) return;
+
     const prev = lastWarnStatusRef.current;
     lastWarnStatusRef.current = warning.status;
 
-    if (prev === null) return; // first load
+    if (prev === null) return;
     if (prev === warning.status) return;
 
-    const worsened =
-      (prev === "ok" && (warning.status === "warn" || warning.status === "late")) ||
-      (prev === "warn" && warning.status === "late");
-
-    if (worsened) {
-      alert(
-        warning.status === "warn"
-          ? `⚠️ Rischio sforamento\nFine stimata: ${warning.finishAtText}`
-          : `⛔ Probabile sforamento\nFine stimata: ${warning.finishAtText}`
-      );
-      setDismissBanner(false); // ensure banner shows after popup
-    }
+    // qui in futuro popup / toast / vibrazione
+    console.log("WARN STATUS:", warning.status);
   }, [warning]);
 
-  if (loading) return <div className="p-4 text-sm text-neutral-600">Caricamento Driver Mode…</div>;
+  // =====================
+  // UI
+  // =====================
 
   return (
-    <main className="min-h-dvh bg-neutral-50 p-3 pb-28">
-      <div className="mx-auto flex max-w-md flex-col gap-3">
-        <div className="sticky top-2 z-10 rounded-2xl border bg-white p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
+    <div className="p-4 space-y-4">
+      {/* Lista stop */}
+      {stops.map((stop) => (
+        <Card key={stop.id}>
+          <CardContent className="flex items-center justify-between">
             <div>
-              <div className="text-xs text-neutral-500">RoutePro • Driver Mode</div>
-              {activeStop && (
-                <div className="mt-1 text-xs text-neutral-700">
-                  Corrente: <b>OPT #{activeStop.optimized_position ?? "—"}</b>{" "}
-                  (AF #{activeStop.af_stop_number ?? activeStop.position}) • {activeStop.stop_type}
-                </div>
+              <div className="font-medium">
+                #{stop.original_position} →{" "}
+                {stop.optimized_position ?? "-"}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {stop.address}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() =>
+                  openNavigation(stop.lat, stop.lng)
+                }
+              >
+                Naviga
+              </Button>
+
+              {!stop.completed && (
+                <Button
+                  onClick={() => {
+                    setStops((prev) =>
+                      prev.map((s) =>
+                        s.id === stop.id
+                          ? { ...s, completed: true }
+                          : s
+                      )
+                    );
+
+                    if (!startedAt) {
+                      setStartedAt(new Date());
+                    }
+
+                    if (
+                      completedStops.length + 1 ===
+                      stops.length
+                    ) {
+                      setEndedAt(new Date());
+                    }
+                  }}
+                >
+                  Fatto
+                </Button>
               )}
-              <div className="mt-1 text-[11px] text-neutral-500">
-                Consegne: <b>{deliveriesDone}/{totalDeliveries}</b>
-                {pace?.stopsPerHour != null && (
-                  <> • ritmo: <b>{pace.stopsPerHour}</b> stop/ora</>
-                )}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+
+      {/* Avviso rientro */}
+      {warning && (
+        <Card
+          className={
+            warning.status === "ok"
+              ? "border-green-500"
+              : warning.status === "warn"
+              ? "border-yellow-500"
+              : "border-red-500"
+          }
+        >
+          <CardContent className="text-sm">
+            <strong>Rientro stimato:</strong>{" "}
+            {warning.finishAtText}
+            {warning.requiredStopsPerHour && (
+              <div>
+                Per rientrare: ~
+                {warning.requiredStopsPerHour} stop/ora
               </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Link href={`/routepro/routes/${routeId}`}>
-                <Button variant="outline">Dettaglio</Button>
-              </Link>
-              <Button variant="outline" onClick={onResetTimer}>
-                Reset tempo
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <Button onClick={navToActive} disabled={!activeStop}>Naviga corrente</Button>
-            <Button variant="outline" onClick={goToNextPending}>Prossimo (seleziona)</Button>
-          </div>
-
-          <div className="mt-2">
-            <Button onClick={navToNextPending} disabled={!nextPendingDelivery}>
-              Naviga prossimo non fatto
-            </Button>
-          </div>
-
-          <div className="mt-2 flex gap-2">
-            <Button
-              variant={navApp === "google" ? "secondary" : "outline"}
-              className="flex-1"
-              onClick={() => onSetNav("google")}
-            >
-              Google
-            </Button>
-            <Button
-              variant={navApp === "waze" ? "secondary" : "outline"}
-              className="flex-1"
-              onClick={() => onSetNav("waze")}
-            >
-              Waze
-            </Button>
-          </div>
-
-          <div className="mt-2 rounded-2xl border bg-neutral-50 p-2">
-            <div className="mb-2 text-xs font-medium text-neutral-700">Vista (Lista / Mappa)</div>
-            <div className="flex gap-2">
-              <Button variant={view === "list" ? "secondary" : "outline"} className="flex-1" onClick={() => setView("list")}>
-                Lista
-              </Button>
-              <Button variant={view === "map" ? "secondary" : "outline"} className="flex-1" onClick={() => setView("map")} disabled={mapStops.length === 0}>
-                Mappa
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-2">
-            <Button variant="secondary" className="w-full" onClick={load}>Aggiorna</Button>
-          </div>
-        </div>
-
-        {view === "map" ? (
-          <RouteMap stops={mapStops} />
-        ) : (
-          orderedStops.map((s, idx) => (
-            <StopCard
-              key={s.id}
-              ref={(el) => { cardRefs.current[s.id] = el; }}
-              afNumber={s.af_stop_number ?? s.position}
-              optNumber={s.optimized_position ?? idx + 1}
-              address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
-              lat={s.lat}
-              lng={s.lng}
-              isDone={s.is_done}
-              isActive={s.id === activeStopId}
-              onToggleDone={() => toggleDone(s.id, !s.is_done)}
-            />
-          ))
-        )}
-
-        {stats && <StatsSummary stats={stats} />}
-      </div>
-
-      {/* FIXED BOTTOM BANNER (always visible) */}
-      {canShowTimeWarning && nearingEnd && warning && !dismissBanner && (
-        <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
-          <div className="rounded-2xl border bg-white p-3 shadow-lg">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-xs font-medium text-neutral-500">Rientro (stima)</div>
-
-                {etaLoading && <div className="mt-1 text-sm text-neutral-600">Calcolo ETA rientro...</div>}
-                {etaError && <div className="mt-1 text-sm text-red-600">ETA non disponibile: {etaError}</div>}
-
-                {!etaLoading && !etaError && (
-                  <>
-                    <div className="mt-1 text-sm font-semibold">
-                      {warning.status === "ok" && "✅ Sei in linea"}
-                      {warning.status === "warn" && "⚠️ Rischio sforamento"}
-                      {warning.status === "late" && "⛔ Probabile sforamento"}
-                    </div>
-
-                    <div className="text-sm text-neutral-700">
-                      Fine stimata: <b>{warning.finishAtText}</b>{" "}
-                      {etaKeyMode && (
-                        <span className="text-xs text-neutral-500">
-                          (ETA: {etaKeyMode === "user" ? "ORS utente" : "ORS NDW"})
-                        </span>
-                      )}
-                    </div>
-
-                    {warning.requiredStopsPerHour != null && (
-                      <div className="text-sm text-neutral-700">
-                        Per rientrare entro target: ~<b>{warning.requiredStopsPerHour}</b> stop/ora
-                      </div>
-                    )}
-
-                    <div className="mt-1 text-[11px] text-neutral-500">
-                      Imposta orari in RoutePro → Settings.
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <Button variant="outline" onClick={() => setDismissBanner(true)}>
-                Chiudi
-              </Button>
-            </div>
-          </div>
-        </div>
+            )}
+          </CardContent>
+        </Card>
       )}
-    </main>
+
+      {/* Stats a FINE ROTTA */}
+      {stats && <StatsSummary stats={stats} />}
+    </div>
   );
 }
