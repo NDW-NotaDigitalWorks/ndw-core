@@ -63,16 +63,10 @@ export default function DriverModePage() {
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
-    // persist last route
     setLastRouteId(routeId);
-
-    // load per-route view preference
     setView(getDriverView(routeId));
-
-    // init start time (first time you open driver mode for this route)
     setStartedAt(getOrSetStartedAt(routeId));
 
-    // load nav preference
     const v =
       (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) ||
       "google";
@@ -86,12 +80,10 @@ export default function DriverModePage() {
   }, [routeId]);
 
   useEffect(() => {
-    // persist view
     setDriverView(routeId, view);
   }, [routeId, view]);
 
   useEffect(() => {
-    // auto-scroll active card into view (only in list)
     if (view !== "list") return;
     if (!activeStopId) return;
     const el = cardRefs.current[activeStopId];
@@ -124,7 +116,11 @@ export default function DriverModePage() {
 
       setStops(list);
 
-      const firstPending = list.find((s) => s.stop_type === "delivery" && !s.is_done) ?? list.find((s) => !s.is_done) ?? list[0];
+      const firstPending =
+        list.find((s) => s.stop_type === "delivery" && !s.is_done) ??
+        list.find((s) => !s.is_done) ??
+        list[0];
+
       setActiveStopId(firstPending?.id ?? null);
     }
 
@@ -146,7 +142,6 @@ export default function DriverModePage() {
   );
 
   const routeCompleted = useMemo(() => {
-    // Completed when all deliveries are done (pickup/return excluded from KPI)
     return totalDeliveries > 0 && deliveriesDone === totalDeliveries;
   }, [totalDeliveries, deliveriesDone]);
 
@@ -204,8 +199,9 @@ export default function DriverModePage() {
     }
 
     if (nextValue) {
-      // jump to next pending delivery if any
-      const pending = orderedStops.find((s) => s.stop_type === "delivery" && !s.is_done && s.id !== stopId);
+      const pending = orderedStops.find(
+        (s) => s.stop_type === "delivery" && !s.is_done && s.id !== stopId
+      );
       if (pending) setActiveStopId(pending.id);
     }
   }
@@ -221,7 +217,11 @@ export default function DriverModePage() {
 
   function navToNextPending() {
     if (!nextPendingDelivery) return;
-    openNavigation({ lat: nextPendingDelivery.lat, lng: nextPendingDelivery.lng, address: nextPendingDelivery.address });
+    openNavigation({
+      lat: nextPendingDelivery.lat,
+      lng: nextPendingDelivery.lng,
+      address: nextPendingDelivery.address,
+    });
     setActiveStopId(nextPendingDelivery.id);
   }
 
@@ -310,9 +310,6 @@ export default function DriverModePage() {
           </div>
         </div>
 
-        {/* Stats at end of route */}
-        {stats && <StatsSummary stats={stats} />}
-
         {view === "map" ? (
           <RouteMap stops={mapStops} />
         ) : (
@@ -331,6 +328,9 @@ export default function DriverModePage() {
             />
           ))
         )}
+
+        {/* STATS AT THE END (NO SCROLL UP NEEDED) */}
+        {stats && <StatsSummary stats={stats} />}
       </div>
     </main>
   );
