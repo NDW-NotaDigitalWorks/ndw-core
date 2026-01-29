@@ -27,27 +27,24 @@ type StopRow = {
 };
 
 type WorkdaySettings = {
-  work_start_time: string | null;      // "09:10"
-  target_end_time: string | null;      // "17:45"
-  max_end_time: string | null;         // "18:04"
-  break_minutes: number | null;        // 30
-  discontinuity_minutes: number | null;// 28
+  work_start_time: string | null;
+  target_end_time: string | null;
+  max_end_time: string | null;
+  break_minutes: number | null;
+  discontinuity_minutes: number | null;
 };
 
 function storageKeyStart(routeId: string) {
   return `ndw_routepro_started_at_${routeId}`;
 }
-
 function getOrSetStartedAt(routeId: string): Date {
   const key = storageKeyStart(routeId);
   const existing = typeof window !== "undefined" ? localStorage.getItem(key) : null;
   if (existing) return new Date(existing);
-
   const now = new Date();
   if (typeof window !== "undefined") localStorage.setItem(key, now.toISOString());
   return now;
 }
-
 function resetStartedAt(routeId: string): Date {
   const key = storageKeyStart(routeId);
   const now = new Date();
@@ -88,7 +85,6 @@ export default function DriverModePage() {
   const [view, setView] = useState<"list" | "map">("list");
   const [startedAt, setStartedAt] = useState<Date | null>(null);
 
-  // Plan / settings
   const [tier, setTier] = useState<"starter" | "pro" | "elite">("starter");
   const [workday, setWorkday] = useState<WorkdaySettings>({
     work_start_time: null,
@@ -98,12 +94,15 @@ export default function DriverModePage() {
     discontinuity_minutes: null,
   });
 
-  // Return ETA (ORS directions)
   const [returnEtaMin, setReturnEtaMin] = useState<number | null>(null);
   const [etaLoading, setEtaLoading] = useState(false);
   const [etaError, setEtaError] = useState<string | null>(null);
   const [etaKeyMode, setEtaKeyMode] = useState<"user" | "ndw" | null>(null);
   const lastEtaFetchedAtRef = useRef<number>(0);
+
+  // UX: banner/popup
+  const [dismissBanner, setDismissBanner] = useState(false);
+  const lastWarnStatusRef = useRef<"ok" | "warn" | "late" | null>(null);
 
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -112,28 +111,22 @@ export default function DriverModePage() {
     setView(getDriverView(routeId));
     setStartedAt(getOrSetStartedAt(routeId));
 
-    const v =
-      (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) ||
-      "google";
+    const v = (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) || "google";
     setNavApp(v === "waze" ? "waze" : "google");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeId]);
 
-  useEffect(() => {
     (async () => {
       const t = await getRouteProTier();
       setTier((t ?? "starter") as any);
     })();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeId]);
 
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeId]);
 
-  useEffect(() => {
-    setDriverView(routeId, view);
-  }, [routeId, view]);
+  useEffect(() => setDriverView(routeId, view), [routeId, view]);
 
   useEffect(() => {
     if (view !== "list") return;
@@ -151,7 +144,6 @@ export default function DriverModePage() {
       return;
     }
 
-    // load stops
     const { data, error } = await supabase
       .from("route_stops")
       .select("id, position, af_stop_number, stop_type, optimized_position, address, lat, lng, is_done")
@@ -162,9 +154,7 @@ export default function DriverModePage() {
       const hasOpt = list.some((s) => s.optimized_position != null);
 
       list.sort((a, b) =>
-        hasOpt
-          ? (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999)
-          : a.position - b.position
+        hasOpt ? (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999) : a.position - b.position
       );
 
       setStops(list);
@@ -177,7 +167,6 @@ export default function DriverModePage() {
       setActiveStopId(firstPending?.id ?? null);
     }
 
-    // load workday settings
     const { data: sRow } = await supabase
       .from("routepro_settings")
       .select("work_start_time,target_end_time,max_end_time,break_minutes,discontinuity_minutes")
@@ -190,47 +179,29 @@ export default function DriverModePage() {
   }
 
   const orderedStops = useMemo(() => stops, [stops]);
-
-  const deliveryStops = useMemo(
-    () => orderedStops.filter((s) => s.stop_type === "delivery"),
-    [orderedStops]
-  );
-
+  const deliveryStops = useMemo(() => orderedStops.filter((s) => s.stop_type === "delivery"), [orderedStops]);
   const totalDeliveries = deliveryStops.length;
   const deliveriesDone = useMemo(() => deliveryStops.filter((s) => s.is_done).length, [deliveryStops]);
   const deliveriesRemaining = totalDeliveries - deliveriesDone;
 
   const routeCompleted = useMemo(() => totalDeliveries > 0 && deliveriesDone === totalDeliveries, [totalDeliveries, deliveriesDone]);
 
-  const activeStop = useMemo(
-    () => orderedStops.find((s) => s.id === activeStopId) ?? null,
-    [orderedStops, activeStopId]
-  );
-
+  const activeStop = useMemo(() => orderedStops.find((s) => s.id === activeStopId) ?? null, [orderedStops, activeStopId]);
   const nextPendingDelivery = useMemo(() => deliveryStops.find((s) => !s.is_done) ?? null, [deliveryStops]);
-
   const pickupStop = useMemo(() => orderedStops.find((s) => s.stop_type === "pickup") ?? null, [orderedStops]);
 
   const stats = useMemo(() => {
     if (!startedAt) return null;
     if (!routeCompleted) return null;
-
-    return computeRouteStats({
-      totalStops: totalDeliveries,
-      startedAt,
-      endedAt: new Date(),
-    });
+    return computeRouteStats({ totalStops: totalDeliveries, startedAt, endedAt: new Date() });
   }, [startedAt, routeCompleted, totalDeliveries]);
 
-  // Pace estimate while running (not end-of-route stats)
   const pace = useMemo(() => {
     if (!startedAt) return null;
     const elapsedMin = (Date.now() - startedAt.getTime()) / 60000;
     if (elapsedMin <= 0) return null;
-
     const avgMinPerStop = deliveriesDone > 0 ? elapsedMin / deliveriesDone : null;
     const stopsPerHour = deliveriesDone > 0 ? (deliveriesDone / elapsedMin) * 60 : null;
-
     return {
       elapsedMin: Math.round(elapsedMin),
       avgMinPerStop: avgMinPerStop ? Number(avgMinPerStop.toFixed(2)) : null,
@@ -257,7 +228,6 @@ export default function DriverModePage() {
     setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s)));
 
     const { error } = await supabase.from("route_stops").update({ is_done: nextValue }).eq("id", stopId);
-
     if (error) {
       setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s)));
       return;
@@ -294,20 +264,13 @@ export default function DriverModePage() {
     setStartedAt(now);
   }
 
-  // --- RETURN ETA + WARNINGS (PRO/ELITE) ---
+  // ----- RIENTRO (PRO/ELITE) -----
   const canShowTimeWarning = tier === "pro" || tier === "elite";
   const nearingEnd = deliveriesRemaining <= 20 && deliveriesRemaining > 0;
 
   const targetEndMin = parseTimeToMinutes(workday.target_end_time);
   const maxEndMin = parseTimeToMinutes(workday.max_end_time);
-  const workStartMin = parseTimeToMinutes(workday.work_start_time);
-  const breakMin = workday.break_minutes ?? 0;
-  const discMin = workday.discontinuity_minutes ?? 0;
-
-  const nowMinFromMidnight = useMemo(() => {
-    const d = new Date();
-    return d.getHours() * 60 + d.getMinutes();
-  }, []);
+  const nowMinFromMidnight = new Date().getHours() * 60 + new Date().getMinutes();
 
   const remainingWorkMin = useMemo(() => {
     if (!pace?.avgMinPerStop) return null;
@@ -317,12 +280,10 @@ export default function DriverModePage() {
   const pickupPoint = useMemo(() => {
     if (!pickupStop) return null;
     if (pickupStop.lat != null && pickupStop.lng != null) return { lat: pickupStop.lat, lng: pickupStop.lng };
-    // fallback: use address
     return { address: pickupStop.address };
   }, [pickupStop]);
 
   const fromPoint = useMemo(() => {
-    // use active stop as current position, else next pending, else last stop
     const s = activeStop ?? nextPendingDelivery ?? orderedStops.at(-1) ?? null;
     if (!s) return null;
     if (s.lat != null && s.lng != null) return { lat: s.lat, lng: s.lng };
@@ -334,7 +295,6 @@ export default function DriverModePage() {
     if (!nearingEnd) return;
     if (!pickupPoint || !fromPoint) return;
 
-    // throttle calls (max once per 60s)
     const now = Date.now();
     if (now - lastEtaFetchedAtRef.current < 60_000) return;
     lastEtaFetchedAtRef.current = now;
@@ -369,43 +329,26 @@ export default function DriverModePage() {
     }
   }
 
-  // fetch ETA when nearing end or when active changes near end
   useEffect(() => {
     fetchReturnEta();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nearingEnd, activeStopId]);
 
   const finishEstimate = useMemo(() => {
-    if (!canShowTimeWarning) return null;
-    if (!nearingEnd) return null;
-    if (remainingWorkMin == null) return null;
-    if (returnEtaMin == null) return null;
-
+    if (!canShowTimeWarning || !nearingEnd) return null;
+    if (remainingWorkMin == null || returnEtaMin == null) return null;
     const totalRemaining = remainingWorkMin + returnEtaMin;
     const finishAt = addMinutesToNow(totalRemaining);
-
-    return {
-      totalRemainingMin: totalRemaining,
-      finishAt,
-    };
+    return { totalRemainingMin: totalRemaining, finishAt };
   }, [canShowTimeWarning, nearingEnd, remainingWorkMin, returnEtaMin]);
 
   const warning = useMemo(() => {
     if (!finishEstimate) return null;
-    if (targetEndMin == null || maxEndMin == null || workStartMin == null) return null;
+    if (targetEndMin == null || maxEndMin == null) return null;
 
-    // We compare against target/max clock times.
     const finishClockMin = finishEstimate.finishAt.getHours() * 60 + finishEstimate.finishAt.getMinutes();
+    const status = finishClockMin <= targetEndMin ? "ok" : finishClockMin <= maxEndMin ? "warn" : "late";
 
-    const status =
-      finishClockMin <= targetEndMin
-        ? "ok"
-        : finishClockMin <= maxEndMin
-        ? "warn"
-        : "late";
-
-    // Required pace to hit target (rough):
-    // available minutes until target end (from now) minus return ETA
     const minutesUntilTarget = targetEndMin - nowMinFromMidnight;
     const availableForStops = minutesUntilTarget - (returnEtaMin ?? 0);
     const requiredStopsPerHour =
@@ -415,24 +358,36 @@ export default function DriverModePage() {
       status,
       finishAtText: minutesToClock(finishClockMin),
       requiredStopsPerHour: requiredStopsPerHour ? Number(requiredStopsPerHour.toFixed(1)) : null,
-      note: `Stima basata su ritmo attuale + ETA rientro. Pausa/discontinuità (tot ${breakMin + discMin} min) non sono “forzate” nel calcolo: usale come margine.`,
     };
-  }, [
-    finishEstimate,
-    targetEndMin,
-    maxEndMin,
-    workStartMin,
-    nowMinFromMidnight,
-    returnEtaMin,
-    deliveriesRemaining,
-    breakMin,
-    discMin,
-  ]);
+  }, [finishEstimate, targetEndMin, maxEndMin, nowMinFromMidnight, returnEtaMin, deliveriesRemaining]);
+
+  // Popup one-time when warning worsens (ok -> warn/late)
+  useEffect(() => {
+    if (!warning) return;
+    const prev = lastWarnStatusRef.current;
+    lastWarnStatusRef.current = warning.status;
+
+    if (prev === null) return; // first load
+    if (prev === warning.status) return;
+
+    const worsened =
+      (prev === "ok" && (warning.status === "warn" || warning.status === "late")) ||
+      (prev === "warn" && warning.status === "late");
+
+    if (worsened) {
+      alert(
+        warning.status === "warn"
+          ? `⚠️ Rischio sforamento\nFine stimata: ${warning.finishAtText}`
+          : `⛔ Probabile sforamento\nFine stimata: ${warning.finishAtText}`
+      );
+      setDismissBanner(false); // ensure banner shows after popup
+    }
+  }, [warning]);
 
   if (loading) return <div className="p-4 text-sm text-neutral-600">Caricamento Driver Mode…</div>;
 
   return (
-    <main className="min-h-dvh bg-neutral-50 p-3">
+    <main className="min-h-dvh bg-neutral-50 p-3 pb-28">
       <div className="mx-auto flex max-w-md flex-col gap-3">
         <div className="sticky top-2 z-10 rounded-2xl border bg-white p-3 shadow-sm">
           <div className="flex items-center justify-between gap-2">
@@ -507,54 +462,6 @@ export default function DriverModePage() {
           </div>
         </div>
 
-        {/* RETURN WARNING (PRO/ELITE only, near end) */}
-        {canShowTimeWarning && nearingEnd && (
-          <div className="rounded-2xl border bg-white p-3 shadow-sm">
-            <div className="text-xs font-medium text-neutral-500">Rientro (stima)</div>
-
-            {etaLoading && (
-              <div className="mt-2 text-sm text-neutral-600">Calcolo ETA rientro...</div>
-            )}
-
-            {etaError && (
-              <div className="mt-2 text-sm text-red-600">
-                ETA non disponibile: {etaError}
-              </div>
-            )}
-
-            {!etaLoading && !etaError && warning && (
-              <div className="mt-2 space-y-1">
-                <div className="text-sm font-semibold">
-                  {warning.status === "ok" && "✅ Sei in linea"}
-                  {warning.status === "warn" && "⚠️ Rischio sforamento"}
-                  {warning.status === "late" && "⛔ Probabile sforamento"}
-                </div>
-
-                <div className="text-sm text-neutral-700">
-                  Fine stimata: <b>{warning.finishAtText}</b>{" "}
-                  {etaKeyMode && (
-                    <span className="text-xs text-neutral-500">
-                      (ETA: {etaKeyMode === "user" ? "ORS utente" : "ORS NDW"})
-                    </span>
-                  )}
-                </div>
-
-                {warning.requiredStopsPerHour != null && (
-                  <div className="text-sm text-neutral-700">
-                    Per rientrare entro target: ~<b>{warning.requiredStopsPerHour}</b> stop/ora
-                  </div>
-                )}
-
-                <div className="text-xs text-neutral-500">{warning.note}</div>
-
-                <div className="mt-2 text-xs text-neutral-500">
-                  Impostazioni orari in RoutePro → Settings.
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {view === "map" ? (
           <RouteMap stops={mapStops} />
         ) : (
@@ -574,9 +481,57 @@ export default function DriverModePage() {
           ))
         )}
 
-        {/* STATS AT THE END */}
         {stats && <StatsSummary stats={stats} />}
       </div>
+
+      {/* FIXED BOTTOM BANNER (always visible) */}
+      {canShowTimeWarning && nearingEnd && warning && !dismissBanner && (
+        <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
+          <div className="rounded-2xl border bg-white p-3 shadow-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-neutral-500">Rientro (stima)</div>
+
+                {etaLoading && <div className="mt-1 text-sm text-neutral-600">Calcolo ETA rientro...</div>}
+                {etaError && <div className="mt-1 text-sm text-red-600">ETA non disponibile: {etaError}</div>}
+
+                {!etaLoading && !etaError && (
+                  <>
+                    <div className="mt-1 text-sm font-semibold">
+                      {warning.status === "ok" && "✅ Sei in linea"}
+                      {warning.status === "warn" && "⚠️ Rischio sforamento"}
+                      {warning.status === "late" && "⛔ Probabile sforamento"}
+                    </div>
+
+                    <div className="text-sm text-neutral-700">
+                      Fine stimata: <b>{warning.finishAtText}</b>{" "}
+                      {etaKeyMode && (
+                        <span className="text-xs text-neutral-500">
+                          (ETA: {etaKeyMode === "user" ? "ORS utente" : "ORS NDW"})
+                        </span>
+                      )}
+                    </div>
+
+                    {warning.requiredStopsPerHour != null && (
+                      <div className="text-sm text-neutral-700">
+                        Per rientrare entro target: ~<b>{warning.requiredStopsPerHour}</b> stop/ora
+                      </div>
+                    )}
+
+                    <div className="mt-1 text-[11px] text-neutral-500">
+                      Imposta orari in RoutePro → Settings.
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <Button variant="outline" onClick={() => setDismissBanner(true)}>
+                Chiudi
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
