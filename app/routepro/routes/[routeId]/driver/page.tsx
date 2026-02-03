@@ -22,6 +22,7 @@ type StopRow = {
   stop_type: "pickup" | "delivery" | "return";
   optimized_position: number | null;
   address: string;
+  packages: number | null; // ✅ NEW
   lat: number | null;
   lng: number | null;
   is_done: boolean;
@@ -156,10 +157,10 @@ export default function DriverModePage() {
       return;
     }
 
-    // stops
+    // stops ✅ include packages
     const { data, error } = await supabase
       .from("route_stops")
-      .select("id, position, af_stop_number, stop_type, optimized_position, address, lat, lng, is_done")
+      .select("id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done")
       .eq("route_id", routeId);
 
     if (!error && data) {
@@ -365,7 +366,7 @@ export default function DriverModePage() {
   const withinOneHourToTarget = useMemo(() => {
     if (targetEndMin == null) return false;
     const minutesLeft = targetEndMin - nowMinFromMidnight;
-    return minutesLeft <= 60 && minutesLeft >= -120; // tolleranza se già sei oltre
+    return minutesLeft <= 60 && minutesLeft >= -120;
   }, [targetEndMin, nowMinFromMidnight]);
 
   const remainingWorkMin = useMemo(() => {
@@ -570,10 +571,19 @@ export default function DriverModePage() {
           <div className="mt-2 rounded-2xl border bg-neutral-50 p-2">
             <div className="mb-2 text-xs font-medium text-neutral-700">Vista (Lista / Mappa)</div>
             <div className="flex gap-2">
-              <Button variant={view === "list" ? "secondary" : "outline"} className="flex-1" onClick={() => setView("list")}>
+              <Button
+                variant={view === "list" ? "secondary" : "outline"}
+                className="flex-1"
+                onClick={() => setView("list")}
+              >
                 Lista
               </Button>
-              <Button variant={view === "map" ? "secondary" : "outline"} className="flex-1" onClick={() => setView("map")} disabled={mapStops.length === 0}>
+              <Button
+                variant={view === "map" ? "secondary" : "outline"}
+                className="flex-1"
+                onClick={() => setView("map")}
+                disabled={mapStops.length === 0}
+              >
                 Mappa
               </Button>
             </div>
@@ -597,6 +607,7 @@ export default function DriverModePage() {
               address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
               lat={s.lat}
               lng={s.lng}
+              packages={s.packages}  {/* ✅ NEW */}
               isDone={s.is_done}
               isActive={s.id === activeStopId}
               onToggleDone={() => toggleDone(s.id, !s.is_done)}
