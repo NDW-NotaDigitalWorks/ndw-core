@@ -606,7 +606,7 @@ export default function DriverModePage() {
               address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
               lat={s.lat}
               lng={s.lng}
-              packages={s.packages}   {/* ✅ OK: niente commenti qui */}
+              packages={s.packages}  
               isDone={s.is_done}
               isActive={s.id === activeStopId}
               onToggleDone={() => toggleDone(s.id, !s.is_done)}
