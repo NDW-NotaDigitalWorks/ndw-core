@@ -16,6 +16,10 @@ export default function ImportChoicePage() {
               Aggiungi indirizzi alla rotta
             </div>
 
+            <div className="text-xs text-neutral-500">
+              Scegli come inserire gli stop in RoutePro
+            </div>
+
             <Button
               className="w-full"
               onClick={() => router.push("/routepro/import/text")}
@@ -26,9 +30,9 @@ export default function ImportChoicePage() {
             <Button
               variant="outline"
               className="w-full"
-              disabled
+              onClick={() => router.push("/routepro/import/manual")}
             >
-              ✍️ Inserimento manuale (in arrivo)
+              ✍️ Inserimento manuale
             </Button>
 
             <Button
