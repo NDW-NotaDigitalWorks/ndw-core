@@ -26,9 +26,9 @@ export default function ImportChoicePage() {
             <Button
               variant="outline"
               className="w-full"
-              onClick={() => router.push("/routepro/import/manual")}
+              disabled
             >
-              ✍️ Inserimento manuale
+              ✍️ Inserimento manuale (in arrivo)
             </Button>
 
             <Button
