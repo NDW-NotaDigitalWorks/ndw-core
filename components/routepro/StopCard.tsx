@@ -12,7 +12,7 @@ type Props = {
   lng: number | null;
   isDone: boolean;
   isActive: boolean;
-  packages?: number | null; // ✅ NEW
+  packages?: number | null; 
   onToggleDone: () => void;
 };
 
