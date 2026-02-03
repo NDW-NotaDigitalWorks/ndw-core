@@ -1,4 +1,3 @@
-// app/routepro/routes/[routeId]/driver/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -157,7 +156,7 @@ export default function DriverModePage() {
       return;
     }
 
-    // stops ✅ include packages
+    // ✅ stops (include packages)
     const { data, error } = await supabase
       .from("route_stops")
       .select("id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done")
@@ -532,7 +531,7 @@ export default function DriverModePage() {
             </div>
           </div>
 
-          {/* PRE-ALERT INIZIALE (fase 1) */}
+          {/* PRE-ALERT INIZIALE */}
           {requiredStopsPerHourAtStart !== null && (
             <div className="mt-2 rounded-xl border bg-blue-50 px-3 py-2 text-sm text-blue-900">
               Per rientrare in orario dovrai tenere una media di{" "}
@@ -607,7 +606,7 @@ export default function DriverModePage() {
               address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
               lat={s.lat}
               lng={s.lng}
-              packages={s.packages}  {/* ✅ NEW */}
+              packages={s.packages}   {/* ✅ OK: niente commenti qui */}
               isDone={s.is_done}
               isActive={s.id === activeStopId}
               onToggleDone={() => toggleDone(s.id, !s.is_done)}
@@ -619,7 +618,7 @@ export default function DriverModePage() {
         {stats && <StatsSummary stats={stats} />}
       </div>
 
-      {/* FIXED BOTTOM BANNER (fase 2 monitor live + rientro) */}
+      {/* FIXED BOTTOM BANNER */}
       {canShowTimeWarning && withinOneHourToTarget && warning && warning.status !== "ok" && !dismissBanner && (
         <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
           <Card className="rounded-2xl border bg-white shadow-lg">
