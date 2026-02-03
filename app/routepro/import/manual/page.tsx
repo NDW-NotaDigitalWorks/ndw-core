@@ -69,8 +69,9 @@ export default function ImportManualPage() {
     const c = normalizeText(city);
 
     const pRaw = packages.trim();
-    const pNum = pRaw ? Number(pRaw) : null;
-    const p = pRaw ? (Number.isFinite(pNum) && pNum > 0 ? Math.floor(pNum) : null) : null;
+    const n = pRaw ? Number(pRaw) : NaN;
+    const p = Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+
 
     if (!a || !c) {
       setError("Inserisci almeno indirizzo e città.");
