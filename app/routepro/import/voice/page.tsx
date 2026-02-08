@@ -1,7 +1,7 @@
 // app/routepro/import/voice/page.tsx
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
@@ -18,26 +18,19 @@ function normalizeText(s: string) {
   return s.replace(/\s+/g, " ").trim();
 }
 
-type SpeechRecognitionType = any;
-
-export default function RouteImportVoicePage() {
+export default function ImportVoicePage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
 
-  const [routeName, setRouteName] = useState("RoutePro • Import Vocale");
+  const [routeName, setRouteName] = useState("RoutePro • Vocale");
   const [rawText, setRawText] = useState("");
-
   const [analyzed, setAnalyzed] = useState(false);
+
   const [stops, setStops] = useState<ReviewStop[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-
-  // Speech recognition
-  const recognitionRef = useRef<SpeechRecognitionType | null>(null);
-  const [speechSupported, setSpeechSupported] = useState(false);
-  const [listening, setListening] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -51,70 +44,6 @@ export default function RouteImportVoicePage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Init SpeechRecognition (if available)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const SR =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
-    if (!SR) {
-      setSpeechSupported(false);
-      return;
-    }
-
-    setSpeechSupported(true);
-
-    const rec = new SR();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "it-IT";
-
-    rec.onresult = (event: any) => {
-      let interim = "";
-      let finalText = "";
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const t = event.results[i][0]?.transcript ?? "";
-        if (event.results[i].isFinal) finalText += t + "\n";
-        else interim += t;
-      }
-
-      // Append final, keep interim in-place (simple approach)
-      if (finalText) {
-        setRawText((prev) => (prev ? prev + "\n" : "") + finalText.trim());
-      }
-    };
-
-    rec.onerror = (e: any) => {
-      setListening(false);
-      setError(e?.error ? `Errore dettatura: ${e.error}` : "Errore dettatura");
-    };
-
-    rec.onend = () => {
-      setListening(false);
-    };
-
-    recognitionRef.current = rec;
-
-    return () => {
-      try {
-        rec.stop();
-      } catch {}
-      recognitionRef.current = null;
-    };
-  }, []);
-
-  const parsedPreviewCount = useMemo(() => {
-    if (!rawText.trim()) return 0;
-    try {
-      return parseFlexStops(rawText).length;
-    } catch {
-      return 0;
-    }
-  }, [rawText]);
 
   const counts = useMemo(() => {
     let errors = 0;
@@ -131,42 +60,29 @@ export default function RouteImportVoicePage() {
   }, [stops]);
 
   const stopCount = stops.length;
+
   const canAnalyze = rawText.trim().length > 0;
 
   const canCreate =
     analyzed &&
     stopCount > 0 &&
     !saving &&
-    counts.errors === 0; // blocca solo se mancano indirizzo/città
+    counts.errors === 0;
 
-  function startListening() {
-    setError(null);
-    if (!recognitionRef.current) return;
+  const parsedPreviewCount = useMemo(() => {
+    if (!rawText.trim()) return 0;
     try {
-      recognitionRef.current.start();
-      setListening(true);
-    } catch (e: any) {
-      // start() può fallire se già attivo
-      setListening(true);
+      return parseFlexStops(rawText).length;
+    } catch {
+      return 0;
     }
-  }
-
-  function stopListening() {
-    if (!recognitionRef.current) return;
-    try {
-      recognitionRef.current.stop();
-    } catch {}
-    setListening(false);
-  }
+  }, [rawText]);
 
   function onAnalyze() {
     setError(null);
     try {
       const parsed = parseFlexStops(rawText);
-      const normalized = parsed.map((s, i) => ({
-        ...s,
-        stop_index: i + 1,
-      }));
+      const normalized = parsed.map((s, i) => ({ ...s, stop_index: i + 1 }));
       setStops(normalized);
       setAnalyzed(true);
     } catch (e: any) {
@@ -184,13 +100,7 @@ export default function RouteImportVoicePage() {
   function onAdd() {
     const next = [
       ...stops,
-      {
-        stop_index: stops.length + 1,
-        address: "",
-        city: null,
-        packages: null,
-        delivery_window: null,
-      },
+      { stop_index: stops.length + 1, address: "", city: null, packages: null, delivery_window: null },
     ];
     setStops(next);
   }
@@ -207,7 +117,7 @@ export default function RouteImportVoicePage() {
         .from("routes")
         .insert({
           user_id: userId,
-          name: normalizeText(routeName) || "RoutePro • Import Vocale",
+          name: normalizeText(routeName) || "RoutePro • Vocale",
           created_at: nowISO(),
           updated_at: nowISO(),
         })
@@ -256,9 +166,10 @@ export default function RouteImportVoicePage() {
         {!analyzed && (
           <Card className="rounded-2xl">
             <CardContent className="p-3">
-              <div className="text-sm font-semibold">Import vocale (Dettatura → testo)</div>
+              <div className="text-sm font-semibold">Import vocale (beta)</div>
               <div className="mt-1 text-xs text-neutral-500">
-                Premi 🎙️ e detta gli stop. Poi “Analizza” per ottenere la revisione editabile.
+                Usa la dettatura della tastiera: leggi/riassumi gli stop e incolla qui il testo.
+                Poi <b>Analizza</b> → <b>Revisione</b> → <b>Crea rotta</b>.
               </div>
 
               <div className="mt-3">
@@ -266,53 +177,13 @@ export default function RouteImportVoicePage() {
                 <Input value={routeName} onChange={(e) => setRouteName(e.target.value)} />
               </div>
 
-              <div className="mt-3 flex gap-2">
-                <Button
-                  className="flex-1"
-                  onClick={listening ? stopListening : startListening}
-                  disabled={!speechSupported}
-                >
-                  {speechSupported
-                    ? listening
-                      ? "⏹️ Stop dettatura"
-                      : "🎙️ Avvia dettatura"
-                    : "🎙️ Dittatura non supportata"}
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="flex-1"
-                  onClick={() => {
-                    setRawText("");
-                    setError(null);
-                  }}
-                >
-                  Pulisci
-                </Button>
-              </div>
-
-              {!speechSupported && (
-                <div className="mt-2 rounded-xl border bg-yellow-50 px-3 py-2 text-xs text-yellow-900">
-                  Se sei su iPhone: usa il <b>microfono della tastiera</b> nel campo qui sotto (funziona benissimo).
-                </div>
-              )}
-
               <div className="mt-3">
-                <div className="mb-1 text-[11px] font-medium text-neutral-600">
-                  Testo (dettatura / incolla)
-                </div>
+                <div className="mb-1 text-[11px] font-medium text-neutral-600">Testo dettato / incollato</div>
                 <textarea
-                  className="min-h-[240px] w-full rounded-2xl border bg-white p-3 text-sm outline-none"
+                  className="min-h-[220px] w-full rounded-2xl border bg-white p-3 text-sm outline-none"
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
-                  placeholder={`Esempio:
-Via Lecco 12
-Giussano
-Consegna 1 pacco
-Via Monza 72
-Giussano
-Consegna 2 pacchi
-...`}
+                  placeholder="Detta o incolla qui..."
                 />
                 <div className="mt-2 text-[11px] text-neutral-500">
                   Anteprima stop rilevati: <b>{parsedPreviewCount}</b>
@@ -329,9 +200,23 @@ Consegna 2 pacchi
                 <Button className="flex-1" onClick={onAnalyze} disabled={!canAnalyze}>
                   Analizza
                 </Button>
+                <Button
+                  className="flex-1"
+                  variant="outline"
+                  onClick={() => {
+                    setRawText("");
+                    setStops([]);
+                    setAnalyzed(false);
+                    setError(null);
+                  }}
+                >
+                  Pulisci
+                </Button>
+              </div>
 
-                <Button variant="outline" className="flex-1" onClick={() => router.push("/routepro/import")}>
-                  ← Indietro
+              <div className="mt-2">
+                <Button variant="outline" className="w-full" onClick={() => router.push("/routepro/import")}>
+                  ← Metodi import
                 </Button>
               </div>
             </CardContent>
@@ -346,17 +231,11 @@ Consegna 2 pacchi
               </div>
             )}
 
-            <ImportReview
-              stops={stops}
-              onChange={setStops}
-              onRemove={onRemove}
-              onAdd={onAdd}
-            />
+            <ImportReview stops={stops} onChange={setStops} onRemove={onRemove} onAdd={onAdd} />
           </>
         )}
       </div>
 
-      {/* Sticky bottom CTA */}
       {analyzed && (
         <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
           <Card className="rounded-2xl border bg-white shadow-lg">
@@ -364,8 +243,7 @@ Consegna 2 pacchi
               <div className="flex items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-xs text-neutral-500">
-                    Stop: <b>{stopCount}</b> • Errori: <b>{counts.errors}</b> • Da verificare:{" "}
-                    <b>{counts.warns}</b>
+                    Stop: <b>{stopCount}</b> • Errori: <b>{counts.errors}</b> • Da verificare: <b>{counts.warns}</b>
                   </div>
                   {counts.errors > 0 && (
                     <div className="mt-1 text-xs text-red-600">
@@ -381,11 +259,11 @@ Consegna 2 pacchi
 
               <div className="mt-2 flex items-center justify-between">
                 <Button variant="outline" onClick={() => setAnalyzed(false)}>
-                  ← Modifica testo
+                  ← Torna al testo
                 </Button>
 
-                <Button variant="outline" onClick={() => router.push("/routepro")}>
-                  RoutePro
+                <Button variant="outline" onClick={() => router.push("/routepro/import")}>
+                  Metodi
                 </Button>
               </div>
             </CardContent>

@@ -23,7 +23,7 @@ export default function ImportChoicePage() {
             </Button>
 
             <Button variant="outline" className="w-full" onClick={() => router.push("/routepro/import/voice")}>
-              🎙️ Import vocale (Dettatura → Analizza)
+              🎙️ Import vocale <span className="ml-2 text-[11px] text-neutral-500">(beta)</span>
             </Button>
 
             <Button
@@ -35,7 +35,7 @@ export default function ImportChoicePage() {
             </Button>
 
             <div className="pt-2 text-[11px] text-neutral-500">
-              Tip iPhone: puoi anche usare la <b>dettatura della tastiera</b> dentro il campo testo.
+              Tip iPhone: puoi usare la <b>dettatura della tastiera</b> nel campo testo.
             </div>
           </CardContent>
         </Card>
@@ -44,8 +44,7 @@ export default function ImportChoicePage() {
           <CardContent className="p-4">
             <div className="text-xs font-medium text-neutral-700">Consiglio “da strada”</div>
             <div className="mt-1 text-xs text-neutral-500">
-              Per 120–150 stop: fai screenshot Flex → OCR/copia testo → Importa da testo → Revisione rapida.
-              Se invece devi inserire a voce mentre sei in giro: Import vocale.
+              120–150 stop: <b>Screenshot → OCR → Import testo → Revisione</b>. Se sei in giro: <b>Manuale</b> o <b>Vocale</b>.
             </div>
           </CardContent>
         </Card>

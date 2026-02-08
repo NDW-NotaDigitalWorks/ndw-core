@@ -1,7 +1,7 @@
 // app/routepro/import/manual/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
@@ -30,8 +30,11 @@ export default function ImportManualPage() {
 
   // quick add fields
   const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
+  const [city, setCity] = useState("Giussano"); // default comodo (puoi cambiarla)
   const [packages, setPackages] = useState<string>("");
+
+  const addressRef = useRef<HTMLInputElement | null>(null);
+  const packagesRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -42,6 +45,9 @@ export default function ImportManualPage() {
       }
       setUserId(data.user.id);
       setLoading(false);
+
+      // autofocus
+      setTimeout(() => addressRef.current?.focus(), 50);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -62,16 +68,20 @@ export default function ImportManualPage() {
 
   const canCreate = stops.length > 0 && counts.errors === 0 && !saving;
 
+  function parsePackages(raw: string): number | null {
+    const pRaw = raw.trim();
+    if (!pRaw) return null;
+    const n = Number(pRaw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.floor(n);
+  }
+
   function onAddStop() {
     setError(null);
 
     const a = normalizeText(address);
     const c = normalizeText(city);
-
-    const pRaw = packages.trim();
-    const n = pRaw ? Number(pRaw) : NaN;
-    const p = Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
-
+    const p = parsePackages(packages);
 
     if (!a || !c) {
       setError("Inserisci almeno indirizzo e città.");
@@ -91,10 +101,12 @@ export default function ImportManualPage() {
 
     setStops(next);
 
-    // reset fields (veloce)
+    // reset fields super-veloce: tieni city, resetta address+packages
     setAddress("");
-    setCity("");
     setPackages("");
+
+    // torna subito sull'indirizzo
+    setTimeout(() => addressRef.current?.focus(), 0);
   }
 
   function onRemove(stopIndex: number) {
@@ -174,32 +186,52 @@ export default function ImportManualPage() {
           <CardContent className="p-3">
             <div className="text-sm font-semibold">Inserimento manuale</div>
             <div className="mt-1 text-xs text-neutral-500">
-              Aggiungi stop uno per volta (indirizzo, città, pacchi). Poi controlla la lista e crea la rotta.
+              Aggiungi stop uno per volta. Tip: premi <b>Invio</b> nel campo “Pacchi” per aggiungere subito.
             </div>
 
             <div className="mt-3">
               <div className="mb-1 text-[11px] font-medium text-neutral-600">Nome rotta</div>
-              <Input value={routeName} onChange={(e) => setRouteName(e.target.value)} />
+              <Input
+                value={routeName}
+                onChange={(e) => setRouteName(e.target.value)}
+                onFocus={() => setError(null)}
+              />
             </div>
 
             <div className="mt-3 grid grid-cols-1 gap-2">
               <div>
                 <div className="mb-1 text-[11px] font-medium text-neutral-600">Indirizzo</div>
-                <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Via Lecco 12 / Azienda..." />
+                <Input
+                  ref={addressRef}
+                  value={address}
+                  onChange={(e) => { setAddress(e.target.value); if (error) setError(null); }}
+                  placeholder="Via Lecco 12 / Azienda..."
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <div className="mb-1 text-[11px] font-medium text-neutral-600">Città</div>
-                  <Input value={city} onChange={(e) => setCity(e.target.value)} placeholder="Giussano" />
+                  <Input
+                    value={city}
+                    onChange={(e) => { setCity(e.target.value); if (error) setError(null); }}
+                    placeholder="Giussano"
+                  />
                 </div>
                 <div>
                   <div className="mb-1 text-[11px] font-medium text-neutral-600">Pacchi</div>
                   <Input
+                    ref={packagesRef}
                     value={packages}
-                    onChange={(e) => setPackages(e.target.value)}
-                    placeholder="1"
+                    onChange={(e) => { setPackages(e.target.value); if (error) setError(null); }}
+                    placeholder="(opzionale)"
                     inputMode="numeric"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        onAddStop();
+                      }
+                    }}
                   />
                 </div>
               </div>
@@ -216,18 +248,17 @@ export default function ImportManualPage() {
                 </Button>
 
                 <Button variant="outline" className="flex-1" onClick={() => router.push("/routepro/import")}>
-                  ← Indietro
+                  ← Metodi import
                 </Button>
               </div>
 
               <div className="pt-1 text-[11px] text-neutral-500">
-                Tip: se vuoi aggiungere “placeholder” e poi correggere dopo, usa “Aggiungi vuoto” nella revisione.
+                Se vuoi correggere dopo: usa “+ Stop” in Revisione oppure “Aggiungi vuoto”.
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Lista editabile */}
         <ImportReview
           stops={stops}
           onChange={setStops}
@@ -236,7 +267,6 @@ export default function ImportManualPage() {
         />
       </div>
 
-      {/* Sticky bottom CTA */}
       <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
         <Card className="rounded-2xl border bg-white shadow-lg">
           <CardContent className="p-3">
