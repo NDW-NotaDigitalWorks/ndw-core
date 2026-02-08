@@ -1,3 +1,4 @@
+// app/routepro/import/text/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -17,7 +18,7 @@ function normalizeText(s: string) {
   return s.replace(/\s+/g, " ").trim();
 }
 
-export default function RouteImportTextPage() {
+export default function ImportTextPage() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
@@ -31,6 +32,9 @@ export default function RouteImportTextPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // ✅ NEW: modalità focus (massimo spazio per edit lista)
+  const [focusEdit, setFocusEdit] = useState(false);
+
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -41,7 +45,8 @@ export default function RouteImportTextPage() {
       setUserId(data.user.id);
       setLoading(false);
     })();
-  }, [router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const counts = useMemo(() => {
     let errors = 0;
@@ -85,6 +90,7 @@ export default function RouteImportTextPage() {
       }));
       setStops(normalized);
       setAnalyzed(true);
+      setFocusEdit(true); // ✅ appena entri in revisione: focus ON
     } catch (e: any) {
       setError(e?.message ?? "Errore parsing");
     }
@@ -98,7 +104,7 @@ export default function RouteImportTextPage() {
   }
 
   function onAdd() {
-    setStops([
+    const next = [
       ...stops,
       {
         stop_index: stops.length + 1,
@@ -107,11 +113,13 @@ export default function RouteImportTextPage() {
         packages: null,
         delivery_window: null,
       },
-    ]);
+    ];
+    setStops(next);
   }
 
   async function onCreateRoute() {
-    if (!userId || !canCreate) return;
+    if (!userId) return;
+    if (!canCreate) return;
 
     setSaving(true);
     setError(null);
@@ -132,14 +140,19 @@ export default function RouteImportTextPage() {
       const routeId = routeRow.id as string;
 
       const stopRows = stops
-        .filter((s) => s.address && s.city)
+        .map((s) => ({
+          address: normalizeText(s.address),
+          city: normalizeText(s.city ?? ""),
+          packages: s.packages ?? null,
+        }))
+        .filter((s) => s.address.length > 0 && s.city.length > 0)
         .map((s, idx) => ({
           route_id: routeId,
           position: idx + 1,
           af_stop_number: idx + 1,
           stop_type: "delivery",
           optimized_position: null,
-          address: `${normalizeText(s.address)}, ${normalizeText(s.city!)}`,
+          address: `${s.address}, ${s.city}`,
           packages: s.packages,
           lat: null,
           lng: null,
@@ -160,87 +173,119 @@ export default function RouteImportTextPage() {
   if (loading) return <div className="p-4 text-sm text-neutral-600">Caricamento…</div>;
 
   return (
-    <main className="min-h-dvh bg-neutral-50 p-3 pb-28">
+    <main className={["min-h-dvh bg-neutral-50 p-3", analyzed ? "pb-28" : "pb-10"].join(" ")}>
       <div className="mx-auto flex max-w-md flex-col gap-3">
-        {/* Top mini bar: indietro + titolo */}
-        <div className="flex items-center justify-between gap-2">
-          <Button variant="outline" onClick={() => router.push("/routepro/import")}>
-            ← Metodi import
-          </Button>
-
-          <Button variant="outline" onClick={() => router.push("/routepro")}>
-            RoutePro
-          </Button>
-        </div>
-
+        {/* STEP 1: INPUT TESTO (solo quando NON sei in focus) */}
         {!analyzed && (
           <Card className="rounded-2xl">
-            <CardContent className="p-3 space-y-3">
-              <div>
-                <div className="text-sm font-semibold">Importa da testo / screenshot</div>
-                <div className="mt-1 text-xs text-neutral-500">
-                  Incolla il testo OCR → Analizza → Revisione → Crea rotta
-                </div>
+            <CardContent className="p-3">
+              <div className="text-sm font-semibold">Importa rotta (da testo)</div>
+              <div className="mt-1 text-xs text-neutral-500">
+                Screenshot Flex → OCR/copia testo → incolla → Analizza → Revisione → Crea rotta
               </div>
 
-              <div>
+              <div className="mt-3">
                 <div className="mb-1 text-[11px] font-medium text-neutral-600">Nome rotta</div>
-                <Input
-                  value={routeName}
-                  onChange={(e) => setRouteName(e.target.value)}
-                  placeholder="Nome rotta"
-                />
+                <Input value={routeName} onChange={(e) => setRouteName(e.target.value)} />
               </div>
 
-              <div>
+              <div className="mt-3">
                 <div className="mb-1 text-[11px] font-medium text-neutral-600">Testo incollato</div>
                 <textarea
                   className="min-h-[220px] w-full rounded-2xl border bg-white p-3 text-sm outline-none"
                   value={rawText}
                   onChange={(e) => setRawText(e.target.value)}
-                  placeholder="Incolla qui la lista stop estratta da screenshot Flex…"
+                  placeholder="Incolla qui la lista stop estratta da screenshot Flex..."
                 />
-
                 <div className="mt-2 text-[11px] text-neutral-500">
                   Anteprima stop rilevati: <b>{parsedPreviewCount}</b>
                 </div>
               </div>
 
               {error && (
-                <div className="rounded-xl border bg-red-50 px-3 py-2 text-sm text-red-700">
+                <div className="mt-3 rounded-xl border bg-red-50 px-3 py-2 text-sm text-red-700">
                   {error}
                 </div>
               )}
 
-              <div className="flex gap-2">
+              <div className="mt-3 flex gap-2">
                 <Button className="flex-1" onClick={onAnalyze} disabled={!canAnalyze}>
                   Analizza
                 </Button>
                 <Button
-                  variant="outline"
                   className="flex-1"
+                  variant="outline"
                   onClick={() => {
                     setRawText("");
                     setStops([]);
                     setAnalyzed(false);
+                    setFocusEdit(false);
                     setError(null);
                   }}
                 >
                   Pulisci
                 </Button>
               </div>
+
+              <div className="mt-3">
+                <Button variant="outline" className="w-full" onClick={() => router.push("/routepro/import")}>
+                  ← Indietro
+                </Button>
+              </div>
             </CardContent>
           </Card>
         )}
 
+        {/* STEP 2: REVISIONE (FOCUS MODE) */}
         {analyzed && (
           <>
+            {/* Mini top bar (sempre piccola) */}
+            <div className="sticky top-2 z-10 rounded-2xl border bg-white px-3 py-2 shadow-sm">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs text-neutral-500">Import • Revisione</div>
+                  <div className="text-[11px] text-neutral-500">
+                    Stop: <b>{stopCount}</b> • Errori: <b className={counts.errors ? "text-red-600" : ""}>{counts.errors}</b> • Verifica:{" "}
+                    <b className={counts.warns ? "text-amber-700" : ""}>{counts.warns}</b>
+                  </div>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFocusEdit((v) => !v)}
+                  className="shrink-0"
+                >
+                  {focusEdit ? "UI +" : "Focus"}
+                </Button>
+              </div>
+
+              {!focusEdit && (
+                <div className="mt-2 grid grid-cols-1 gap-2">
+                  <div>
+                    <div className="mb-1 text-[11px] font-medium text-neutral-600">Nome rotta</div>
+                    <Input value={routeName} onChange={(e) => setRouteName(e.target.value)} />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setAnalyzed(false)}>
+                      ← Modifica testo
+                    </Button>
+                    <Button variant="outline" className="flex-1" onClick={() => router.push("/routepro/import")}>
+                      ← Metodi import
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {error && (
               <div className="rounded-xl border bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
               </div>
             )}
 
+            {/* Lista editabile */}
             <ImportReview
               stops={stops}
               onChange={setStops}
@@ -251,14 +296,26 @@ export default function RouteImportTextPage() {
         )}
       </div>
 
-      {/* Bottom bar SUPER COMPATTA */}
+      {/* Sticky bottom CTA: in focus diventa super compatta */}
       {analyzed && (
         <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
           <Card className="rounded-2xl border bg-white shadow-lg">
-            <CardContent className="p-3">
+            <CardContent className={["p-3", focusEdit ? "py-2" : ""].join(" ")}>
               <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-neutral-500">
-                  Stop: <b>{stopCount}</b> • Errori: <b className="text-red-600">{counts.errors}</b>
+                <div className="min-w-0">
+                  <div className="text-xs text-neutral-500">
+                    Stop: <b>{stopCount}</b>
+                    {!focusEdit && (
+                      <>
+                        {" "}• Errori: <b>{counts.errors}</b> • Verifica: <b>{counts.warns}</b>
+                      </>
+                    )}
+                  </div>
+                  {!focusEdit && counts.errors > 0 && (
+                    <div className="mt-1 text-xs text-red-600">
+                      Completa indirizzo + città negli stop evidenziati.
+                    </div>
+                  )}
                 </div>
 
                 <Button onClick={onCreateRoute} disabled={!canCreate}>
@@ -266,21 +323,17 @@ export default function RouteImportTextPage() {
                 </Button>
               </div>
 
-              {counts.errors > 0 && (
-                <div className="mt-1 text-[11px] text-red-600">
-                  Completa indirizzo + città negli stop in rosso.
+              {!focusEdit && (
+                <div className="mt-2 flex items-center justify-between">
+                  <Button variant="outline" onClick={() => setAnalyzed(false)} disabled={saving}>
+                    ← Modifica testo
+                  </Button>
+
+                  <Button variant="outline" onClick={() => router.push("/routepro")} disabled={saving}>
+                    RoutePro
+                  </Button>
                 </div>
               )}
-
-              <div className="mt-2 flex items-center justify-between">
-                <Button variant="outline" onClick={() => setAnalyzed(false)}>
-                  ← Torna al testo
-                </Button>
-
-                <Button variant="outline" onClick={() => router.push("/routepro/import")}>
-                  Metodi
-                </Button>
-              </div>
             </CardContent>
           </Card>
         </div>
