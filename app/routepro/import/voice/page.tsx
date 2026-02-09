@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { LogoutButton } from "@/components/auth/LogoutButton";
-import ImportVoiceContent from "@/components/routepro/ImportVoiceContent";
+import { ImportVoiceContent } from "@/components/routepro/ImportVoiceContent";
 
 export default function ImportVoicePage() {
   const router = useRouter();
