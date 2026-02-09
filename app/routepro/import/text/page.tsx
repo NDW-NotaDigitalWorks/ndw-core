@@ -174,6 +174,17 @@ export default function ImportTextPage() {
 
   return (
     <main className={["min-h-dvh bg-neutral-50 p-3", analyzed ? "pb-28" : "pb-10"].join(" ")}>
+      <div className="mx-auto max-w-md mb-2">
+  <Button
+    variant="outline"
+    className="w-full"
+    onClick={() => router.push("/routepro/import")}
+    type="button"
+  >
+    ← Metodi di import
+  </Button>
+</div>
+
       <div className="mx-auto flex max-w-md flex-col gap-3">
         {/* STEP 1: INPUT TESTO (solo quando NON sei in focus) */}
         {!analyzed && (

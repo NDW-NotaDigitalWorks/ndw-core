@@ -555,15 +555,20 @@ export default function DriverModePage() {
                 )}
               </div>
             </div>
+                import { LogoutButton } from "@/components/auth/LogoutButton";
+  
+               <div className="flex gap-2">
+               <Link href={`/routepro/routes/${routeId}`}>
+               <Button variant="outline">Dettaglio</Button>
+               </Link>
 
-            <div className="flex gap-2">
-              <Link href={`/routepro/routes/${routeId}`}>
-                <Button variant="outline" type="button">Dettaglio</Button>
-              </Link>
-              <Button variant="outline" onClick={onResetTimer} type="button">
+               <Button variant="outline" onClick={onResetTimer}>
                 Reset tempo
-              </Button>
-            </div>
+                </Button>
+
+                 <LogoutButton />
+                 </div>
+
           </div>
 
           {requiredStopsPerHourAtStart !== null && (

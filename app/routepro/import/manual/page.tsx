@@ -182,6 +182,17 @@ export default function ImportManualPage() {
   return (
     <main className="min-h-dvh bg-neutral-50 p-3 pb-28">
       <div className="mx-auto flex max-w-md flex-col gap-3">
+        <div className="mx-auto max-w-md mb-2">
+  <Button
+    variant="outline"
+    className="w-full"
+    onClick={() => router.push("/routepro/import")}
+    type="button"
+  >
+    ← Metodi di import
+  </Button>
+</div>
+ 
         <Card className="rounded-2xl">
           <CardContent className="p-3">
             <div className="text-sm font-semibold">Inserimento manuale</div>
