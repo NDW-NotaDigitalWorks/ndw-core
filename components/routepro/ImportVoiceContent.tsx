@@ -15,22 +15,16 @@ function ImportVoiceContent({ value, onChange }: Props) {
 
   const speechSupported = useMemo(() => {
     if (typeof window === "undefined") return false;
-    return Boolean(
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition
-    );
+    return Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
   }, []);
 
   useEffect(() => {
     if (!speechSupported) return;
 
-    const Ctor =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
-
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!Ctor) return;
 
-    const rec = new Ctor();
+    const rec: any = new Ctor();
     rec.continuous = true;
     rec.interimResults = true;
     rec.lang = "it-IT";
@@ -42,9 +36,8 @@ function ImportVoiceContent({ value, onChange }: Props) {
           finalText += event.results[i][0].transcript + "\n";
         }
       }
-      if (finalText.trim()) {
-        onChange((value ? value + "\n" : "") + finalText.trim());
-      }
+      const clean = finalText.trim();
+      if (clean) onChange((value ? value + "\n" : "") + clean);
     };
 
     rec.onerror = () => {
@@ -57,14 +50,16 @@ function ImportVoiceContent({ value, onChange }: Props) {
     recognitionRef.current = rec;
 
     return () => {
-      try { rec.stop(); } catch {}
+      try {
+        rec.stop();
+      } catch {}
       recognitionRef.current = null;
     };
   }, [speechSupported, value, onChange]);
 
   function toggle() {
     if (!speechSupported || !recognitionRef.current) {
-      setInfo("Usa la dettatura iOS/Android (microfono sulla tastiera).");
+      setInfo("Questo browser non supporta il microfono in-app. Usa la dettatura della tastiera.");
       return;
     }
 
