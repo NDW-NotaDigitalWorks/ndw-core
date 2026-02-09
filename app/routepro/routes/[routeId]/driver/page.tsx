@@ -1,3 +1,4 @@
+// app/routepro/routes/[routeId]/driver/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -113,7 +114,6 @@ export default function DriverModePage() {
   const [etaKeyMode, setEtaKeyMode] = useState<"user" | "ndw" | null>(null);
   const lastEtaFetchedAtRef = useRef<number>(0);
 
-  // Banner UX
   const [dismissBanner, setDismissBanner] = useState(false);
   const lastWarnStatusRef = useRef<WarnStatus | null>(null);
 
@@ -126,8 +126,7 @@ export default function DriverModePage() {
     setStartedAt(getOrSetStartedAt(routeId));
 
     const v =
-      (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) ||
-      "google";
+      (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) || "google";
     setNavApp(v === "waze" ? "waze" : "google");
 
     (async () => {
@@ -146,6 +145,7 @@ export default function DriverModePage() {
     setDriverView(routeId, view);
   }, [routeId, view]);
 
+  // ✅ Scroll automatico quando selezioni uno stop (anche da mappa)
   useEffect(() => {
     if (view !== "list") return;
     if (!activeStopId) return;
@@ -164,7 +164,9 @@ export default function DriverModePage() {
 
     const { data, error } = await supabase
       .from("route_stops")
-      .select("id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done")
+      .select(
+        "id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done"
+      )
       .eq("route_id", routeId);
 
     if (!error && data) {
@@ -189,7 +191,9 @@ export default function DriverModePage() {
 
     const { data: sRow } = await supabase
       .from("routepro_settings")
-      .select("work_start_time,target_end_time,max_end_time,break_minutes,discontinuity_minutes")
+      .select(
+        "work_start_time,target_end_time,max_end_time,break_minutes,discontinuity_minutes"
+      )
       .eq("user_id", userData.user.id)
       .maybeSingle();
 
@@ -233,6 +237,7 @@ export default function DriverModePage() {
     [orderedStops]
   );
 
+  // ✅ stop per mappa (solo con coordinate)
   const mapStops = useMemo(() => {
     return orderedStops
       .filter((s) => s.lat != null && s.lng != null)
@@ -248,7 +253,7 @@ export default function DriverModePage() {
       }));
   }, [orderedStops, activeStopId]);
 
-  // 🔥 auto-geocode in background se serve (solo una volta)
+  // 🔥 auto-geocode (soft) se mancano lat/lng (non rompe se endpoint non esiste)
   useEffect(() => {
     if (geocodeStartedRef.current) return;
 
@@ -307,19 +312,12 @@ export default function DriverModePage() {
   }, [startedAt, deliveriesDone]);
 
   async function toggleDone(stopId: string, nextValue: boolean) {
-    setStops((prev) =>
-      prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s))
-    );
+    setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: nextValue } : s)));
 
-    const { error } = await supabase
-      .from("route_stops")
-      .update({ is_done: nextValue })
-      .eq("id", stopId);
+    const { error } = await supabase.from("route_stops").update({ is_done: nextValue }).eq("id", stopId);
 
     if (error) {
-      setStops((prev) =>
-        prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s))
-      );
+      setStops((prev) => prev.map((s) => (s.id === stopId ? { ...s, is_done: !nextValue } : s)));
       return;
     }
 
@@ -360,9 +358,6 @@ export default function DriverModePage() {
     setStartedAt(now);
   }
 
-  // ==========================
-  // FASE 1 — PRE-ALERT (target stop/ora)
-  // ==========================
   const requiredStopsPerHourAtStart = useMemo(() => {
     if (!startedAt) return null;
     if (!workday.target_end_time) return null;
@@ -379,17 +374,9 @@ export default function DriverModePage() {
 
     const required = (totalDeliveries / availableMinutes) * 60;
     return Number(required.toFixed(1));
-  }, [
-    startedAt,
-    workday.target_end_time,
-    workday.break_minutes,
-    workday.discontinuity_minutes,
-    totalDeliveries,
-  ]);
+  }, [startedAt, workday.target_end_time, workday.break_minutes, workday.discontinuity_minutes, totalDeliveries]);
 
-  // ==========================
-  // FASE 2 — MONITOR LIVE (≤ 60 min al target) + ETA RIENTRO
-  // ==========================
+  // ===== Banner rientro (mantengo il tuo impianto base)
   const canShowTimeWarning = tier === "pro" || tier === "elite";
 
   const targetEndMin = parseTimeToMinutes(workday.target_end_time);
@@ -476,29 +463,18 @@ export default function DriverModePage() {
     return { totalRemainingMin: totalRemaining, finishAt };
   }, [canShowTimeWarning, withinOneHourToTarget, remainingWorkMin, returnEtaMin, deliveriesRemaining]);
 
-  const warning = useMemo((): {
-    status: WarnStatus;
-    finishAtText: string;
-    requiredStopsPerHour: number | null;
-  } | null => {
+  const warning = useMemo((): { status: WarnStatus; finishAtText: string; requiredStopsPerHour: number | null } | null => {
     if (!finishEstimate) return null;
     if (targetEndMin == null || maxEndMin == null) return null;
 
-    const finishClockMin =
-      finishEstimate.finishAt.getHours() * 60 +
-      finishEstimate.finishAt.getMinutes();
+    const finishClockMin = finishEstimate.finishAt.getHours() * 60 + finishEstimate.finishAt.getMinutes();
 
     const status: WarnStatus =
-      finishClockMin <= targetEndMin
-        ? "ok"
-        : finishClockMin <= maxEndMin
-          ? "warn"
-          : "late";
+      finishClockMin <= targetEndMin ? "ok" : finishClockMin <= maxEndMin ? "warn" : "late";
 
     const minutesUntilTarget = targetEndMin - nowMinFromMidnight;
     const availableForStops = minutesUntilTarget - (returnEtaMin ?? 0);
-    const requiredStopsPerHour =
-      availableForStops > 0 ? (deliveriesRemaining / availableForStops) * 60 : null;
+    const requiredStopsPerHour = availableForStops > 0 ? (deliveriesRemaining / availableForStops) * 60 : null;
 
     return {
       status,
@@ -548,9 +524,7 @@ export default function DriverModePage() {
               )}
               <div className="mt-1 text-[11px] text-neutral-500">
                 Consegne: <b>{deliveriesDone}/{totalDeliveries}</b>
-                {pace?.stopsPerHour != null && (
-                  <> • ritmo: <b>{pace.stopsPerHour}</b> stop/ora</>
-                )}
+                {pace?.stopsPerHour != null && <> • ritmo: <b>{pace.stopsPerHour}</b> stop/ora</>}
               </div>
             </div>
 
@@ -558,19 +532,16 @@ export default function DriverModePage() {
               <Link href={`/routepro/routes/${routeId}`}>
                 <Button variant="outline" type="button">Dettaglio</Button>
               </Link>
-
               <Button variant="outline" onClick={onResetTimer} type="button">
                 Reset tempo
               </Button>
-
               <LogoutButton />
             </div>
           </div>
 
           {requiredStopsPerHourAtStart !== null && (
             <div className="mt-2 rounded-xl border bg-blue-50 px-3 py-2 text-sm text-blue-900">
-              Per rientrare in orario dovrai tenere una media di{" "}
-              <b>{requiredStopsPerHourAtStart}</b> stop/ora.
+              Per rientrare in orario dovrai tenere una media di <b>{requiredStopsPerHourAtStart}</b> stop/ora.
             </div>
           )}
 
@@ -640,7 +611,7 @@ export default function DriverModePage() {
               stops={mapStops}
               onSelectStop={(id) => {
                 setActiveStopId(id);
-                setView("list"); // come Flex
+                setView("list"); // ✅ come Flex: marker -> lista -> scroll
               }}
             />
           ) : (
@@ -651,12 +622,7 @@ export default function DriverModePage() {
                 aggiorna tra poco o premi “Aggiorna”.
               </div>
               <div className="mt-3">
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => setView("list")}
-                  type="button"
-                >
+                <Button variant="outline" className="w-full" onClick={() => setView("list")} type="button">
                   Torna alla lista
                 </Button>
               </div>
@@ -666,7 +632,10 @@ export default function DriverModePage() {
           orderedStops.map((s, idx) => (
             <StopCard
               key={s.id}
-              ref={(el) => { cardRefs.current[s.id] = el; }}  // ✅ FIX: ritorna void
+              // ✅ FIX TS: MUST RETURN void
+              ref={(el) => {
+                cardRefs.current[s.id] = el;
+              }}
               afNumber={s.af_stop_number ?? s.position}
               optNumber={s.optimized_position ?? idx + 1}
               address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
@@ -683,7 +652,7 @@ export default function DriverModePage() {
         {stats && <StatsSummary stats={stats} />}
       </div>
 
-      {/* FIXED BOTTOM BANNER */}
+      {/* FIXED BOTTOM BANNER (se attivo) */}
       {canShowTimeWarning && withinOneHourToTarget && warning && warning.status !== "ok" && !dismissBanner && (
         <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
           <Card className="rounded-2xl border bg-white shadow-lg">
@@ -692,9 +661,7 @@ export default function DriverModePage() {
                 <div className="min-w-0">
                   <div className="text-xs font-medium text-neutral-500">Rientro (stima)</div>
 
-                  {etaLoading && (
-                    <div className="mt-1 text-sm text-neutral-600">Calcolo ETA rientro...</div>
-                  )}
+                  {etaLoading && <div className="mt-1 text-sm text-neutral-600">Calcolo ETA rientro...</div>}
 
                   {etaError && (
                     <div className="mt-1 text-sm text-red-600">
