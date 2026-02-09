@@ -1,13 +1,33 @@
+// components/routepro/ImportVoiceContent.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ImportReview, type ReviewStop } from "@/components/routepro/ImportReview";
 import { parseFlexStops } from "@/lib/routepro/flexTextParser";
+
+// ✅ Tipi "safe" per TS build (evita SpeechRecognition non definito)
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onresult: ((event: any) => void) | null;
+  onerror: ((event: any) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+type SpeechCtor = new () => SpeechRecognitionLike;
+
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: SpeechCtor;
+    SpeechRecognition?: SpeechCtor;
+  }
+}
 
 function nowISO() {
   return new Date().toISOString();
@@ -17,26 +37,11 @@ function normalizeText(s: string) {
   return s.replace(/\s+/g, " ").trim();
 }
 
-type SpeechCtor = new () => SpeechRecognition;
-
-declare global {
-  interface Window {
-    webkitSpeechRecognition?: SpeechCtor;
-    SpeechRecognition?: SpeechCtor;
-  }
-}
-
-export default function ImportVoiceContent({
-  onBack,
-}: {
-  onBack: () => void;
+export function ImportVoiceContent(props: {
+  onCreate: (payload: { routeName: string; stops: ReviewStop[] }) => Promise<void> | void;
+  defaultRouteName?: string;
 }) {
-  const router = useRouter();
-
-  const [loading, setLoading] = useState(true);
-  const [userId, setUserId] = useState<string | null>(null);
-
-  const [routeName, setRouteName] = useState("RoutePro • Vocale");
+  const [routeName, setRouteName] = useState(props.defaultRouteName ?? "RoutePro • Vocale");
   const [rawText, setRawText] = useState("");
   const [analyzed, setAnalyzed] = useState(false);
 
@@ -44,10 +49,10 @@ export default function ImportVoiceContent({
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // 🎙️ voice
+  // voice
   const [isRecording, setIsRecording] = useState(false);
   const [voiceInfo, setVoiceInfo] = useState<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   const speechSupported = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -55,19 +60,7 @@ export default function ImportVoiceContent({
   }, []);
 
   useEffect(() => {
-    (async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        router.replace("/login");
-        return;
-      }
-      setUserId(data.user.id);
-      setLoading(false);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
+    if (typeof window === "undefined") return;
     if (!speechSupported) return;
 
     const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -78,12 +71,12 @@ export default function ImportVoiceContent({
     rec.interimResults = true;
     rec.lang = "it-IT";
 
-    rec.onresult = (event: SpeechRecognitionEvent) => {
+    rec.onresult = (event: any) => {
       let finalText = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i];
-        const t = res[0]?.transcript ?? "";
-        if (res.isFinal) finalText += t + "\n";
+        const t = res?.[0]?.transcript ?? "";
+        if (res?.isFinal) finalText += t + "\n";
       }
       if (finalText.trim()) {
         setRawText((prev) => (prev ? prev + "\n" : "") + finalText.trim());
@@ -92,7 +85,7 @@ export default function ImportVoiceContent({
 
     rec.onerror = () => {
       setIsRecording(false);
-      setVoiceInfo("Microfono non disponibile qui. Usa la dettatura iPhone.");
+      setVoiceInfo("Microfono non disponibile qui. Usa la dettatura iPhone sulla tastiera.");
     };
 
     rec.onend = () => {
@@ -123,27 +116,18 @@ export default function ImportVoiceContent({
     return { errors, warns };
   }, [stops]);
 
-  function toggleRecording() {
-    setVoiceInfo(null);
+  const stopCount = stops.length;
+  const canAnalyze = rawText.trim().length > 0;
+  const canCreate = analyzed && stopCount > 0 && !saving && counts.errors === 0;
 
-    if (!speechSupported || !recognitionRef.current) {
-      setVoiceInfo("Su iPhone usa la dettatura della tastiera.");
-      return;
-    }
-
+  const parsedPreviewCount = useMemo(() => {
+    if (!rawText.trim()) return 0;
     try {
-      if (!isRecording) {
-        recognitionRef.current.start();
-        setIsRecording(true);
-      } else {
-        recognitionRef.current.stop();
-        setIsRecording(false);
-      }
+      return parseFlexStops(rawText).length;
     } catch {
-      setIsRecording(false);
-      setVoiceInfo("Errore microfono.");
+      return 0;
     }
-  }
+  }, [rawText]);
 
   function onAnalyze() {
     setError(null);
@@ -157,49 +141,54 @@ export default function ImportVoiceContent({
     }
   }
 
+  function onRemove(stopIndex: number) {
+    const next = stops
+      .filter((s) => s.stop_index !== stopIndex)
+      .map((s, i) => ({ ...s, stop_index: i + 1 }));
+    setStops(next);
+  }
+
+  function onAdd() {
+    const next = [
+      ...stops,
+      { stop_index: stops.length + 1, address: "", city: null, packages: null, delivery_window: null },
+    ];
+    setStops(next);
+  }
+
+  function toggleRecording() {
+    setVoiceInfo(null);
+
+    if (!speechSupported || !recognitionRef.current) {
+      setVoiceInfo("Su iPhone usa la dettatura della tastiera (icona microfono sulla tastiera).");
+      return;
+    }
+
+    try {
+      if (!isRecording) {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } else {
+        recognitionRef.current.stop();
+        setIsRecording(false);
+      }
+    } catch {
+      setIsRecording(false);
+      setVoiceInfo("Non riesco ad avviare il microfono qui. Usa la dettatura iPhone.");
+    }
+  }
+
   async function onCreateRoute() {
-    if (!userId || saving) return;
-    if (counts.errors > 0 || stops.length === 0) return;
+    if (!canCreate) return;
 
     setSaving(true);
     setError(null);
 
     try {
-      const { data: routeRow, error: routeErr } = await supabase
-        .from("routes")
-        .insert({
-          user_id: userId,
-          name: normalizeText(routeName) || "RoutePro • Vocale",
-          created_at: nowISO(),
-          updated_at: nowISO(),
-        })
-        .select("id")
-        .single();
-
-      if (routeErr) throw routeErr;
-
-      const routeId = routeRow.id as string;
-
-      const stopRows = stops.map((s, idx) => ({
-        route_id: routeId,
-        position: idx + 1,
-        af_stop_number: idx + 1,
-        stop_type: "delivery",
-        optimized_position: null,
-        address: `${normalizeText(s.address)}, ${normalizeText(s.city ?? "")}`,
-        packages: s.packages ?? null,
-        lat: null,
-        lng: null,
-        is_done: false,
-      }));
-
-      const { error: stopsErr } = await supabase
-        .from("route_stops")
-        .insert(stopRows);
-
-      if (stopsErr) throw stopsErr;
-
-      router.push(`/routepro/routes/${routeId}`);
+      await props.onCreate({
+        routeName: normalizeText(routeName) || "RoutePro • Vocale",
+        stops,
+      });
     } catch (e: any) {
       setError(e?.message ?? "Errore creazione rotta");
     } finally {
@@ -207,104 +196,130 @@ export default function ImportVoiceContent({
     }
   }
 
-  if (loading) {
-    return <div className="p-4 text-sm text-neutral-600">Caricamento…</div>;
-  }
-
   return (
-    <>
-      {!analyzed ? (
+    <div className="mx-auto flex max-w-md flex-col gap-3">
+      {!analyzed && (
         <Card className="rounded-2xl">
-          <CardContent className="p-4 space-y-3">
+          <CardContent className="p-3">
             <div className="text-sm font-semibold">Import vocale</div>
-
-            <Input
-              value={routeName}
-              onChange={(e) => setRouteName(e.target.value)}
-              placeholder="Nome rotta"
-            />
-
-            <div className="flex gap-2">
-              <Button
-                variant={isRecording ? "secondary" : "outline"}
-                onClick={toggleRecording}
-                type="button"
-              >
-                {isRecording ? "⏹ Stop" : "🎙️ Microfono"}
-              </Button>
-
-              <Button
-                variant="outline"
-                onClick={() => setRawText("")}
-                type="button"
-              >
-                Pulisci
-              </Button>
+            <div className="mt-1 text-xs text-neutral-500">
+              Premi 🎙️ e detta gli stop (oppure usa la dettatura iPhone sulla tastiera). Poi <b>Analizza</b> →{" "}
+              <b>Revisione</b> → <b>Crea rotta</b>.
             </div>
 
-            {voiceInfo && (
-              <div className="text-xs text-neutral-600">{voiceInfo}</div>
-            )}
+            <div className="mt-3">
+              <div className="mb-1 text-[11px] font-medium text-neutral-600">Nome rotta</div>
+              <Input value={routeName} onChange={(e) => setRouteName(e.target.value)} />
+            </div>
 
-            <textarea
-              className="w-full min-h-[220px] rounded-xl border p-3 text-sm"
-              value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
-              placeholder="Detta o incolla qui…"
-            />
+            <div className="mt-3">
+              <div className="mb-1 text-[11px] font-medium text-neutral-600">Testo dettato / incollato</div>
+
+              <div className="mb-2 flex gap-2">
+                <Button
+                  type="button"
+                  variant={isRecording ? "secondary" : "outline"}
+                  className="flex-1"
+                  onClick={toggleRecording}
+                >
+                  {isRecording ? "⏹ Stop microfono" : "🎙️ Avvia microfono"}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setRawText("");
+                    setVoiceInfo(null);
+                  }}
+                >
+                  Pulisci testo
+                </Button>
+              </div>
+
+              {voiceInfo && (
+                <div className="mb-2 rounded-xl border bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+                  {voiceInfo}
+                </div>
+              )}
+
+              {!speechSupported && (
+                <div className="mb-2 rounded-xl border bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  Nota: questo browser non supporta microfono in-app. Usa la <b>dettatura iPhone</b> sulla tastiera.
+                </div>
+              )}
+
+              <textarea
+                className="min-h-[220px] w-full rounded-2xl border bg-white p-3 text-sm outline-none"
+                value={rawText}
+                onChange={(e) => setRawText(e.target.value)}
+                placeholder="Detta o incolla qui..."
+              />
+              <div className="mt-2 text-[11px] text-neutral-500">
+                Anteprima stop rilevati: <b>{parsedPreviewCount}</b>
+              </div>
+            </div>
 
             {error && (
-              <div className="text-sm text-red-600">{error}</div>
+              <div className="mt-3 rounded-xl border bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
             )}
 
-            <Button className="w-full" onClick={onAnalyze} type="button">
-              Analizza
-            </Button>
-
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={onBack}
-              type="button"
-            >
-              ← Torna indietro
-            </Button>
+            <div className="mt-3 flex gap-2">
+              <Button className="flex-1" onClick={onAnalyze} disabled={!canAnalyze} type="button">
+                Analizza
+              </Button>
+              <Button
+                className="flex-1"
+                variant="outline"
+                onClick={() => {
+                  setStops([]);
+                  setAnalyzed(false);
+                  setError(null);
+                }}
+                type="button"
+              >
+                Reset
+              </Button>
+            </div>
           </CardContent>
         </Card>
-      ) : (
-        <>
-          <ImportReview
-            stops={stops}
-            onChange={setStops}
-            onRemove={(i) =>
-              setStops((prev) =>
-                prev.filter((s) => s.stop_index !== i)
-              )
-            }
-            onAdd={() =>
-              setStops((prev) => [
-                ...prev,
-                {
-                  stop_index: prev.length + 1,
-                  address: "",
-                  city: null,
-                  packages: null,
-                  delivery_window: null,
-                },
-              ])
-            }
-          />
+      )}
 
-          <Button
-            className="w-full"
-            onClick={onCreateRoute}
-            disabled={saving || counts.errors > 0}
-            type="button"
-          >
-            {saving ? "Creazione..." : "Crea rotta"}
-          </Button>
+      {analyzed && (
+        <>
+          {error && <div className="rounded-xl border bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+          <ImportReview stops={stops} onChange={setStops} onRemove={onRemove} onAdd={onAdd} />
         </>
       )}
-    </>
+
+      {analyzed && (
+        <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
+          <Card className="rounded-2xl border bg-white shadow-lg">
+            <CardContent className="p-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-xs text-neutral-500">
+                    Stop: <b>{stopCount}</b> • Errori: <b>{counts.errors}</b> • Da verificare: <b>{counts.warns}</b>
+                  </div>
+                  {counts.errors > 0 && (
+                    <div className="mt-1 text-xs text-red-600">Completa indirizzo + città negli stop evidenziati.</div>
+                  )}
+                </div>
+
+                <Button onClick={onCreateRoute} disabled={!canCreate} type="button">
+                  {saving ? "Creazione..." : "Crea rotta"}
+                </Button>
+              </div>
+
+              <div className="mt-2 flex items-center justify-between">
+                <Button variant="outline" onClick={() => setAnalyzed(false)} type="button">
+                  ← Torna al testo
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
   );
 }
