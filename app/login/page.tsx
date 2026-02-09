@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,20 +11,26 @@ import { Input } from "@/components/ui/input";
 
 function isSafeNext(next: string | null): next is string {
   if (!next) return false;
-  // allow only internal paths
   if (!next.startsWith("/")) return false;
   if (next.startsWith("//")) return false;
   return true;
 }
 
+function getNextFromLocation(): string {
+  if (typeof window === "undefined") return "/routepro";
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const n = params.get("next");
+    return isSafeNext(n) ? n : "/routepro";
+  } catch {
+    return "/routepro";
+  }
+}
+
 export default function LoginPage() {
   const router = useRouter();
-  const sp = useSearchParams();
 
-  const next = useMemo(() => {
-    const n = sp.get("next");
-    return isSafeNext(n) ? n : "/routepro";
-  }, [sp]);
+  const next = useMemo(() => getNextFromLocation(), []);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -83,7 +89,6 @@ export default function LoginPage() {
         return;
       }
 
-      // If email confirmation is enabled, session may be null until confirmed.
       if (data.session) {
         router.push(next);
       } else {
