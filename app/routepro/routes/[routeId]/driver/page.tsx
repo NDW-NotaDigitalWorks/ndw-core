@@ -91,7 +91,6 @@ export default function DriverModePage() {
   const [view, setView] = useState<"list" | "map">("list");
 
   const [startedAt, setStartedAt] = useState<Date | null>(null);
-
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // ---- RIENTRO ----
@@ -113,6 +112,9 @@ export default function DriverModePage() {
   // Banner UX
   const [dismissBanner, setDismissBanner] = useState(false);
   const lastWarnStatusRef = useRef<WarnStatus | null>(null);
+
+  // geocode soft (non rompe se endpoint non c'è)
+  const geocodeStartedRef = useRef(false);
 
   useEffect(() => {
     setLastRouteId(routeId);
@@ -156,10 +158,11 @@ export default function DriverModePage() {
       return;
     }
 
-    // stops (include packages)
     const { data, error } = await supabase
       .from("route_stops")
-      .select("id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done")
+      .select(
+        "id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done"
+      )
       .eq("route_id", routeId);
 
     if (!error && data) {
@@ -182,10 +185,11 @@ export default function DriverModePage() {
       setActiveStopId(firstPending?.id ?? null);
     }
 
-    // workday settings
     const { data: sRow } = await supabase
       .from("routepro_settings")
-      .select("work_start_time,target_end_time,max_end_time,break_minutes,discontinuity_minutes")
+      .select(
+        "work_start_time,target_end_time,max_end_time,break_minutes,discontinuity_minutes"
+      )
       .eq("user_id", userData.user.id)
       .maybeSingle();
 
@@ -244,6 +248,47 @@ export default function DriverModePage() {
       }));
   }, [orderedStops, activeStopId]);
 
+  // 🔥 auto-geocode in background se serve (solo una volta)
+  useEffect(() => {
+    if (geocodeStartedRef.current) return;
+
+    const hasAnyCoords = orderedStops.some((s) => s.lat != null && s.lng != null);
+    const hasMissing = orderedStops.some((s) => s.lat == null || s.lng == null);
+
+    // Se non c'è niente da geocodare, stop.
+    if (!hasMissing) return;
+
+    geocodeStartedRef.current = true;
+
+    (async () => {
+      try {
+        const session = await supabase.auth.getSession();
+        const token = session.data.session?.access_token || null;
+
+        // endpoint opzionale: se non esiste non rompe
+        const res = await fetch("/api/routepro/geocode", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ routeId }),
+        });
+
+        if (!res.ok) return;
+
+        // ricarica stops con lat/lng aggiornati
+        await load();
+      } catch {
+        // silenzioso
+      }
+    })();
+
+    // se non c'è nessuna coordinata, restiamo comunque ok: la UI mostra "mappa non disponibile"
+    void hasAnyCoords;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeId, orderedStops.length]);
+
   const stats = useMemo(() => {
     if (!startedAt) return null;
     if (!routeCompleted) return null;
@@ -255,7 +300,6 @@ export default function DriverModePage() {
     });
   }, [startedAt, routeCompleted, totalDeliveries]);
 
-  // ritmo dinamico
   const pace = useMemo(() => {
     if (!startedAt) return null;
     const elapsedMin = (Date.now() - startedAt.getTime()) / 60000;
@@ -325,9 +369,6 @@ export default function DriverModePage() {
     setStartedAt(now);
   }
 
-  // ==========================
-  // FASE 1 — PRE-ALERT (target stop/ora)
-  // ==========================
   const requiredStopsPerHourAtStart = useMemo(() => {
     if (!startedAt) return null;
     if (!workday.target_end_time) return null;
@@ -352,9 +393,6 @@ export default function DriverModePage() {
     totalDeliveries,
   ]);
 
-  // ==========================
-  // FASE 2 — MONITOR LIVE (B: ≤ 60 min al target) + ETA RIENTRO
-  // ==========================
   const canShowTimeWarning = tier === "pro" || tier === "elite";
 
   const targetEndMin = parseTimeToMinutes(workday.target_end_time);
@@ -374,7 +412,8 @@ export default function DriverModePage() {
 
   const pickupPoint = useMemo(() => {
     if (!pickupStop) return null;
-    if (pickupStop.lat != null && pickupStop.lng != null) return { lat: pickupStop.lat, lng: pickupStop.lng };
+    if (pickupStop.lat != null && pickupStop.lng != null)
+      return { lat: pickupStop.lat, lng: pickupStop.lng };
     return { address: pickupStop.address };
   }, [pickupStop]);
 
@@ -450,15 +489,14 @@ export default function DriverModePage() {
     if (targetEndMin == null || maxEndMin == null) return null;
 
     const finishClockMin =
-      finishEstimate.finishAt.getHours() * 60 +
-      finishEstimate.finishAt.getMinutes();
+      finishEstimate.finishAt.getHours() * 60 + finishEstimate.finishAt.getMinutes();
 
     const status: WarnStatus =
       finishClockMin <= targetEndMin
         ? "ok"
         : finishClockMin <= maxEndMin
-        ? "warn"
-        : "late";
+          ? "warn"
+          : "late";
 
     const minutesUntilTarget = targetEndMin - nowMinFromMidnight;
     const availableForStops = minutesUntilTarget - (returnEtaMin ?? 0);
@@ -500,7 +538,6 @@ export default function DriverModePage() {
   return (
     <main className="min-h-dvh bg-neutral-50 p-3 pb-28">
       <div className="mx-auto flex max-w-md flex-col gap-3">
-        {/* STICKY HEADER */}
         <div className="sticky top-2 z-10 rounded-2xl border bg-white p-3 shadow-sm">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -521,9 +558,9 @@ export default function DriverModePage() {
 
             <div className="flex gap-2">
               <Link href={`/routepro/routes/${routeId}`}>
-                <Button variant="outline">Dettaglio</Button>
+                <Button variant="outline" type="button">Dettaglio</Button>
               </Link>
-              <Button variant="outline" onClick={onResetTimer}>
+              <Button variant="outline" onClick={onResetTimer} type="button">
                 Reset tempo
               </Button>
             </div>
@@ -537,12 +574,12 @@ export default function DriverModePage() {
           )}
 
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <Button onClick={navToActive} disabled={!activeStop}>Naviga corrente</Button>
-            <Button variant="outline" onClick={goToNextPending}>Prossimo (seleziona)</Button>
+            <Button onClick={navToActive} disabled={!activeStop} type="button">Naviga corrente</Button>
+            <Button variant="outline" onClick={goToNextPending} type="button">Prossimo (seleziona)</Button>
           </div>
 
           <div className="mt-2">
-            <Button onClick={navToNextPending} disabled={!nextPendingDelivery}>
+            <Button onClick={navToNextPending} disabled={!nextPendingDelivery} type="button">
               Naviga prossimo non fatto
             </Button>
           </div>
@@ -598,16 +635,27 @@ export default function DriverModePage() {
         {/* BODY */}
         {view === "map" ? (
           mapStops.length > 0 ? (
-            <RouteMap stops={mapStops} />
+            <RouteMap
+              stops={mapStops}
+              onSelectStop={(id) => {
+                setActiveStopId(id);
+                setView("list"); // come Flex
+              }}
+            />
           ) : (
             <div className="rounded-2xl border bg-white p-4 text-sm text-neutral-700">
               <div className="font-semibold">Mappa non disponibile</div>
               <div className="mt-1 text-xs text-neutral-500">
-                Questa rotta non ha ancora coordinate (lat/lng). Per vedere i marker sulla mappa
-                serve geocodifica degli indirizzi.
+                Questa rotta non ha ancora coordinate (lat/lng). Se la geocodifica automatica è attiva,
+                aggiorna tra poco o premi “Aggiorna”.
               </div>
               <div className="mt-3">
-                <Button variant="outline" className="w-full" onClick={() => setView("list")} type="button">
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => setView("list")}
+                  type="button"
+                >
                   Torna alla lista
                 </Button>
               </div>
