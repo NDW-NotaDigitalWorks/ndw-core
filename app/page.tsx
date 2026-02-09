@@ -1,6 +1,8 @@
 // app/page.tsx
 import Link from "next/link";
 
+const ROUTEPRO_URL = "https://routepro.notadigitalworks.com/routepro";
+
 export default function HomePage() {
   return (
     <main className="min-h-dvh bg-neutral-50">
@@ -17,17 +19,18 @@ export default function HomePage() {
 
           <div className="flex items-center gap-2">
             <a
-              href="https://routepro.notadigitalworks.com"
+              href={ROUTEPRO_URL}
               className="rounded-xl border bg-white px-3 py-2 text-sm text-neutral-900 hover:bg-neutral-50"
             >
               RoutePro
             </a>
-            <a
-              href="https://ndw-core.vercel.app"
+
+            <Link
+              href="/login?next=/routepro"
               className="rounded-xl bg-neutral-900 px-3 py-2 text-sm text-white hover:opacity-90"
             >
               Accedi
-            </a>
+            </Link>
           </div>
         </div>
       </header>
@@ -51,15 +54,15 @@ export default function HomePage() {
             </p>
 
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-              <a
-                href="https://ndw-core.vercel.app"
+              <Link
+                href="/login?next=/routepro"
                 className="inline-flex items-center justify-center rounded-2xl bg-neutral-900 px-4 py-3 text-sm font-medium text-white hover:opacity-90"
               >
                 Accedi a NDW CORE
-              </a>
+              </Link>
 
               <a
-                href="https://routepro.notadigitalworks.com"
+                href={ROUTEPRO_URL}
                 className="inline-flex items-center justify-center rounded-2xl border bg-white px-4 py-3 text-sm font-medium text-neutral-900 hover:bg-neutral-50"
               >
                 Scopri RoutePro
@@ -129,7 +132,7 @@ export default function HomePage() {
               <li>• Driver Mode con pacchi</li>
             </ul>
             <a
-              href="https://routepro.notadigitalworks.com"
+              href={ROUTEPRO_URL}
               className="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:opacity-90"
             >
               Apri RoutePro
@@ -145,12 +148,12 @@ export default function HomePage() {
               <li>• Struttura multi-tool</li>
               <li>• Base per licensing & piani</li>
             </ul>
-            <a
-              href="https://ndw-core.vercel.app"
+            <Link
+              href="/login?next=/routepro"
               className="mt-4 inline-flex w-full items-center justify-center rounded-2xl border bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50"
             >
               Accedi a NDW CORE
-            </a>
+            </Link>
           </div>
 
           {/* Tixion */}
@@ -174,12 +177,12 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-6 text-sm text-neutral-600 md:flex-row md:items-center md:justify-between">
           <div>© {new Date().getFullYear()} Nota Digital Works</div>
           <div className="flex gap-4">
-            <a className="hover:text-neutral-900" href="https://routepro.notadigitalworks.com">
+            <a className="hover:text-neutral-900" href={ROUTEPRO_URL}>
               RoutePro
             </a>
-            <a className="hover:text-neutral-900" href="https://ndw-core.vercel.app">
+            <Link className="hover:text-neutral-900" href="/login?next=/routepro">
               NDW CORE
-            </a>
+            </Link>
           </div>
         </div>
       </footer>
