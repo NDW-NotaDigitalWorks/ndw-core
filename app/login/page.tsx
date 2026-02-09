@@ -2,15 +2,29 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 
+function isSafeNext(next: string | null): next is string {
+  if (!next) return false;
+  // allow only internal paths
+  if (!next.startsWith("/")) return false;
+  if (next.startsWith("//")) return false;
+  return true;
+}
+
 export default function LoginPage() {
   const router = useRouter();
+  const sp = useSearchParams();
+
+  const next = useMemo(() => {
+    const n = sp.get("next");
+    return isSafeNext(n) ? n : "/routepro";
+  }, [sp]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,13 +32,20 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // If user already has a session -> go to Hub
+  // If user already has a session -> go to RoutePro (avoid /hub which may not exist)
   useEffect(() => {
+    let alive = true;
+
     (async () => {
       const { data } = await supabase.auth.getSession();
-      if (data.session) router.replace("/hub");
+      if (!alive) return;
+      if (data.session) router.replace(next);
     })();
-  }, [router]);
+
+    return () => {
+      alive = false;
+    };
+  }, [router, next]);
 
   async function onLogin() {
     setMessage(null);
@@ -32,7 +53,7 @@ export default function LoginPage() {
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       });
 
@@ -41,7 +62,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/hub");
+      router.push(next);
     } finally {
       setLoading(false);
     }
@@ -53,7 +74,7 @@ export default function LoginPage() {
 
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: email.trim(),
         password,
       });
 
@@ -64,11 +85,9 @@ export default function LoginPage() {
 
       // If email confirmation is enabled, session may be null until confirmed.
       if (data.session) {
-        router.push("/hub");
+        router.push(next);
       } else {
-        setMessage(
-          "Account creato ✅ Controlla la tua email per confermare, poi fai login."
-        );
+        setMessage("Account creato ✅ Controlla la tua email per confermare, poi fai login.");
       }
     } finally {
       setLoading(false);
@@ -81,14 +100,17 @@ export default function LoginPage() {
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
-            <span className="text-sm font-semibold tracking-tight">
-              NDW — Login
-            </span>
+            <span className="text-sm font-semibold tracking-tight">NDW — Login</span>
           </div>
 
-          <Link href="/">
-            <Button variant="ghost">Home</Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/routepro" className="hidden sm:block">
+              <Button variant="ghost">RoutePro</Button>
+            </Link>
+            <Link href="/">
+              <Button variant="ghost">Home</Button>
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -122,10 +144,10 @@ export default function LoginPage() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <Button onClick={onLogin} disabled={loading}>
+                <Button onClick={onLogin} disabled={loading || !email.trim() || !password}>
                   {loading ? "Attendi..." : "Accedi"}
                 </Button>
-                <Button variant="outline" onClick={onSignup} disabled={loading}>
+                <Button variant="outline" onClick={onSignup} disabled={loading || !email.trim() || !password}>
                   {loading ? "Attendi..." : "Crea account"}
                 </Button>
               </div>
@@ -137,7 +159,7 @@ export default function LoginPage() {
               )}
 
               <p className="text-xs text-neutral-500">
-                Prossimo step: logout + protezione completa lato server.
+                Dopo il login verrai reindirizzato a: <b>{next}</b>
               </p>
             </CardContent>
           </Card>
