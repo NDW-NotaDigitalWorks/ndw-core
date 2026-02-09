@@ -18,11 +18,13 @@ function normalizeText(s: string) {
   return s.replace(/\s+/g, " ").trim();
 }
 
-type SpeechCtor = new () => SpeechRecognition;
+// ✅ Speech Recognition typings (safe, no lib needed)
+type SpeechRecognitionCtor = new () => any;
+
 declare global {
   interface Window {
-    webkitSpeechRecognition?: SpeechCtor;
-    SpeechRecognition?: SpeechCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+    SpeechRecognition?: SpeechRecognitionCtor;
   }
 }
 
@@ -43,7 +45,7 @@ export default function ImportVoicePage() {
   // voice
   const [isRecording, setIsRecording] = useState(false);
   const [voiceInfo, setVoiceInfo] = useState<string | null>(null);
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   const speechSupported = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -76,12 +78,12 @@ export default function ImportVoicePage() {
     rec.interimResults = true;
     rec.lang = "it-IT";
 
-    rec.onresult = (event: SpeechRecognitionEvent) => {
+    rec.onresult = (event: any) => {
       let finalText = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i];
-        const t = res[0]?.transcript ?? "";
-        if (res.isFinal) finalText += t + "\n";
+        const t = res?.[0]?.transcript ?? "";
+        if (res?.isFinal) finalText += t + "\n";
       }
       if (finalText.trim()) {
         setRawText((prev) => (prev ? prev + "\n" : "") + finalText.trim());
