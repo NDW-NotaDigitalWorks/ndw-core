@@ -1,7 +1,7 @@
 // app/routepro/import/voice/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,14 @@ function normalizeText(s: string) {
   return s.replace(/\s+/g, " ").trim();
 }
 
+type SpeechCtor = new () => SpeechRecognition;
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: SpeechCtor;
+    SpeechRecognition?: SpeechCtor;
+  }
+}
+
 export default function ImportVoicePage() {
   const router = useRouter();
 
@@ -32,6 +40,16 @@ export default function ImportVoicePage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // voice
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceInfo, setVoiceInfo] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  const speechSupported = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    return Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }, []);
+
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -44,6 +62,50 @@ export default function ImportVoicePage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    // init recognition once
+    if (typeof window === "undefined") return;
+    if (!speechSupported) return;
+
+    const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!Ctor) return;
+
+    const rec = new Ctor();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "it-IT";
+
+    rec.onresult = (event: SpeechRecognitionEvent) => {
+      let finalText = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        const t = res[0]?.transcript ?? "";
+        if (res.isFinal) finalText += t + "\n";
+      }
+      if (finalText.trim()) {
+        setRawText((prev) => (prev ? prev + "\n" : "") + finalText.trim());
+      }
+    };
+
+    rec.onerror = () => {
+      setIsRecording(false);
+      setVoiceInfo("Microfono non disponibile qui. Usa la dettatura iPhone sulla tastiera.");
+    };
+
+    rec.onend = () => {
+      setIsRecording(false);
+    };
+
+    recognitionRef.current = rec;
+
+    return () => {
+      try {
+        rec.stop();
+      } catch {}
+      recognitionRef.current = null;
+    };
+  }, [speechSupported]);
 
   const counts = useMemo(() => {
     let errors = 0;
@@ -60,14 +122,9 @@ export default function ImportVoicePage() {
   }, [stops]);
 
   const stopCount = stops.length;
-
   const canAnalyze = rawText.trim().length > 0;
 
-  const canCreate =
-    analyzed &&
-    stopCount > 0 &&
-    !saving &&
-    counts.errors === 0;
+  const canCreate = analyzed && stopCount > 0 && !saving && counts.errors === 0;
 
   const parsedPreviewCount = useMemo(() => {
     if (!rawText.trim()) return 0;
@@ -103,6 +160,28 @@ export default function ImportVoicePage() {
       { stop_index: stops.length + 1, address: "", city: null, packages: null, delivery_window: null },
     ];
     setStops(next);
+  }
+
+  function toggleRecording() {
+    setVoiceInfo(null);
+
+    if (!speechSupported || !recognitionRef.current) {
+      setVoiceInfo("Su iPhone usa la dettatura della tastiera (icona microfono sulla tastiera).");
+      return;
+    }
+
+    try {
+      if (!isRecording) {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } else {
+        recognitionRef.current.stop();
+        setIsRecording(false);
+      }
+    } catch {
+      setIsRecording(false);
+      setVoiceInfo("Non riesco ad avviare il microfono qui. Usa la dettatura iPhone.");
+    }
   }
 
   async function onCreateRoute() {
@@ -166,9 +245,9 @@ export default function ImportVoicePage() {
         {!analyzed && (
           <Card className="rounded-2xl">
             <CardContent className="p-3">
-              <div className="text-sm font-semibold">Import vocale (beta)</div>
+              <div className="text-sm font-semibold">Import vocale</div>
               <div className="mt-1 text-xs text-neutral-500">
-                Usa la dettatura della tastiera: leggi/riassumi gli stop e incolla qui il testo.
+                Premi 🎙️ e detta gli stop (oppure usa la dettatura iPhone sulla tastiera).
                 Poi <b>Analizza</b> → <b>Revisione</b> → <b>Crea rotta</b>.
               </div>
 
@@ -179,6 +258,41 @@ export default function ImportVoicePage() {
 
               <div className="mt-3">
                 <div className="mb-1 text-[11px] font-medium text-neutral-600">Testo dettato / incollato</div>
+
+                <div className="mb-2 flex gap-2">
+                  <Button
+                    type="button"
+                    variant={isRecording ? "secondary" : "outline"}
+                    className="flex-1"
+                    onClick={toggleRecording}
+                  >
+                    {isRecording ? "⏹ Stop microfono" : "🎙️ Avvia microfono"}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setRawText("");
+                      setVoiceInfo(null);
+                    }}
+                  >
+                    Pulisci testo
+                  </Button>
+                </div>
+
+                {voiceInfo && (
+                  <div className="mb-2 rounded-xl border bg-neutral-50 px-3 py-2 text-xs text-neutral-700">
+                    {voiceInfo}
+                  </div>
+                )}
+
+                {!speechSupported && (
+                  <div className="mb-2 rounded-xl border bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                    Nota: questo browser non supporta microfono in-app. Usa la <b>dettatura iPhone</b> sulla tastiera.
+                  </div>
+                )}
+
                 <textarea
                   className="min-h-[220px] w-full rounded-2xl border bg-white p-3 text-sm outline-none"
                   value={rawText}
@@ -204,13 +318,12 @@ export default function ImportVoicePage() {
                   className="flex-1"
                   variant="outline"
                   onClick={() => {
-                    setRawText("");
                     setStops([]);
                     setAnalyzed(false);
                     setError(null);
                   }}
                 >
-                  Pulisci
+                  Reset
                 </Button>
               </div>
 
@@ -230,7 +343,6 @@ export default function ImportVoicePage() {
                 {error}
               </div>
             )}
-
             <ImportReview stops={stops} onChange={setStops} onRemove={onRemove} onAdd={onAdd} />
           </>
         )}
