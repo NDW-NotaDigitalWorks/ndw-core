@@ -21,7 +21,7 @@ type StopRow = {
   stop_type: "pickup" | "delivery" | "return";
   optimized_position: number | null;
   address: string;
-  packages: number | null; // ✅ NEW
+  packages: number | null;
   lat: number | null;
   lng: number | null;
   is_done: boolean;
@@ -30,11 +30,11 @@ type StopRow = {
 type WarnStatus = "ok" | "warn" | "late";
 
 type WorkdaySettings = {
-  work_start_time: string | null;      // "09:10"
-  target_end_time: string | null;      // "17:45"
-  max_end_time: string | null;         // "18:04"
-  break_minutes: number | null;        // 30
-  discontinuity_minutes: number | null;// 28
+  work_start_time: string | null;
+  target_end_time: string | null;
+  max_end_time: string | null;
+  break_minutes: number | null;
+  discontinuity_minutes: number | null;
 };
 
 function storageKeyStart(routeId: string) {
@@ -156,7 +156,7 @@ export default function DriverModePage() {
       return;
     }
 
-    // ✅ stops (include packages)
+    // stops (include packages)
     const { data, error } = await supabase
       .from("route_stops")
       .select("id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done")
@@ -361,7 +361,6 @@ export default function DriverModePage() {
   const maxEndMin = parseTimeToMinutes(workday.max_end_time);
   const nowMinFromMidnight = new Date().getHours() * 60 + new Date().getMinutes();
 
-  // Trigger B: quando mancano <= 60 minuti al target
   const withinOneHourToTarget = useMemo(() => {
     if (targetEndMin == null) return false;
     const minutesLeft = targetEndMin - nowMinFromMidnight;
@@ -473,7 +472,6 @@ export default function DriverModePage() {
     };
   }, [finishEstimate, targetEndMin, maxEndMin, nowMinFromMidnight, returnEtaMin, deliveriesRemaining]);
 
-  // popup una sola volta se peggiora
   useEffect(() => {
     if (!warning) return;
 
@@ -531,7 +529,6 @@ export default function DriverModePage() {
             </div>
           </div>
 
-          {/* PRE-ALERT INIZIALE */}
           {requiredStopsPerHourAtStart !== null && (
             <div className="mt-2 rounded-xl border bg-blue-50 px-3 py-2 text-sm text-blue-900">
               Per rientrare in orario dovrai tenere una media di{" "}
@@ -555,6 +552,7 @@ export default function DriverModePage() {
               variant={navApp === "google" ? "secondary" : "outline"}
               className="flex-1"
               onClick={() => onSetNav("google")}
+              type="button"
             >
               Google
             </Button>
@@ -562,6 +560,7 @@ export default function DriverModePage() {
               variant={navApp === "waze" ? "secondary" : "outline"}
               className="flex-1"
               onClick={() => onSetNav("waze")}
+              type="button"
             >
               Waze
             </Button>
@@ -571,6 +570,7 @@ export default function DriverModePage() {
             <div className="mb-2 text-xs font-medium text-neutral-700">Vista (Lista / Mappa)</div>
             <div className="flex gap-2">
               <Button
+                type="button"
                 variant={view === "list" ? "secondary" : "outline"}
                 className="flex-1"
                 onClick={() => setView("list")}
@@ -578,10 +578,10 @@ export default function DriverModePage() {
                 Lista
               </Button>
               <Button
+                type="button"
                 variant={view === "map" ? "secondary" : "outline"}
                 className="flex-1"
                 onClick={() => setView("map")}
-                disabled={mapStops.length === 0}
               >
                 Mappa
               </Button>
@@ -589,13 +589,30 @@ export default function DriverModePage() {
           </div>
 
           <div className="mt-2">
-            <Button variant="secondary" className="w-full" onClick={load}>Aggiorna</Button>
+            <Button variant="secondary" className="w-full" onClick={load} type="button">
+              Aggiorna
+            </Button>
           </div>
         </div>
 
         {/* BODY */}
         {view === "map" ? (
-          <RouteMap stops={mapStops} />
+          mapStops.length > 0 ? (
+            <RouteMap stops={mapStops} />
+          ) : (
+            <div className="rounded-2xl border bg-white p-4 text-sm text-neutral-700">
+              <div className="font-semibold">Mappa non disponibile</div>
+              <div className="mt-1 text-xs text-neutral-500">
+                Questa rotta non ha ancora coordinate (lat/lng). Per vedere i marker sulla mappa
+                serve geocodifica degli indirizzi.
+              </div>
+              <div className="mt-3">
+                <Button variant="outline" className="w-full" onClick={() => setView("list")} type="button">
+                  Torna alla lista
+                </Button>
+              </div>
+            </div>
+          )
         ) : (
           orderedStops.map((s, idx) => (
             <StopCard
@@ -606,7 +623,7 @@ export default function DriverModePage() {
               address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
               lat={s.lat}
               lng={s.lng}
-              packages={s.packages}  
+              packages={s.packages}
               isDone={s.is_done}
               isActive={s.id === activeStopId}
               onToggleDone={() => toggleDone(s.id, !s.is_done)}
@@ -614,11 +631,9 @@ export default function DriverModePage() {
           ))
         )}
 
-        {/* STATS AT THE END */}
         {stats && <StatsSummary stats={stats} />}
       </div>
 
-      {/* FIXED BOTTOM BANNER */}
       {canShowTimeWarning && withinOneHourToTarget && warning && warning.status !== "ok" && !dismissBanner && (
         <div className="fixed bottom-3 left-0 right-0 z-50 mx-auto max-w-md px-3">
           <Card className="rounded-2xl border bg-white shadow-lg">
@@ -666,7 +681,7 @@ export default function DriverModePage() {
                   )}
                 </div>
 
-                <Button variant="outline" onClick={() => setDismissBanner(true)}>
+                <Button variant="outline" onClick={() => setDismissBanner(true)} type="button">
                   Chiudi
                 </Button>
               </div>
