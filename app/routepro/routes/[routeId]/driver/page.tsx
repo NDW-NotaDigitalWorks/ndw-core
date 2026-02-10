@@ -186,7 +186,9 @@ export default function DriverModePage() {
       const hasOpt = list.some((s) => s.optimized_position != null);
 
       list.sort((a, b) =>
-        hasOpt ? (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999) : a.position - b.position
+        hasOpt
+          ? (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999)
+          : a.position - b.position
       );
 
       setStops(list);
@@ -228,11 +230,20 @@ export default function DriverModePage() {
     return totalDeliveries > 0 && deliveriesDone === totalDeliveries;
   }, [totalDeliveries, deliveriesDone]);
 
-  const activeStop = useMemo(() => orderedStops.find((s) => s.id === activeStopId) ?? null, [orderedStops, activeStopId]);
+  const activeStop = useMemo(
+    () => orderedStops.find((s) => s.id === activeStopId) ?? null,
+    [orderedStops, activeStopId]
+  );
 
-  const nextPendingDelivery = useMemo(() => deliveryStops.find((s) => !s.is_done) ?? null, [deliveryStops]);
+  const nextPendingDelivery = useMemo(
+    () => deliveryStops.find((s) => !s.is_done) ?? null,
+    [deliveryStops]
+  );
 
-  const pickupStop = useMemo(() => orderedStops.find((s) => s.stop_type === "pickup") ?? null, [orderedStops]);
+  const pickupStop = useMemo(
+    () => orderedStops.find((s) => s.stop_type === "pickup") ?? null,
+    [orderedStops]
+  );
 
   // ✅ stop per mappa (solo con coordinate)
   const mapStops = useMemo(() => {
@@ -521,7 +532,8 @@ export default function DriverModePage() {
 
     const finishClockMin = finishEstimate.finishAt.getHours() * 60 + finishEstimate.finishAt.getMinutes();
 
-    const status: WarnStatus = finishClockMin <= targetEndMin ? "ok" : finishClockMin <= maxEndMin ? "warn" : "late";
+    const status: WarnStatus =
+      finishClockMin <= targetEndMin ? "ok" : finishClockMin <= maxEndMin ? "warn" : "late";
 
     const minutesUntilTarget = targetEndMin - nowMinFromMidnight;
     const availableForStops = minutesUntilTarget - (returnEtaMin ?? 0);
@@ -734,8 +746,8 @@ export default function DriverModePage() {
             <div className="rounded-2xl border bg-white p-4 text-sm text-neutral-700">
               <div className="font-semibold">Mappa non disponibile</div>
               <div className="mt-1 text-xs text-neutral-500">
-                Questa rotta non ha ancora coordinate (lat/lng). Se la geocodifica automatica è attiva,
-                aspetta un attimo oppure premi “Riprova geocode”.
+                Questa rotta non ha ancora coordinate (lat/lng). Se la geocodifica automatica è attiva, aspetta un attimo
+                oppure premi “Riprova geocode”.
               </div>
               <div className="mt-3">
                 <Button variant="outline" className="w-full" onClick={() => setView("list")} type="button">
@@ -753,6 +765,8 @@ export default function DriverModePage() {
               }}
               afNumber={s.af_stop_number ?? s.position}
               optNumber={s.optimized_position ?? idx + 1}
+              // ✅ ripristina "Tipo stop" in card (oltre a prefix emoji in address)
+              stopType={s.stop_type}
               address={`${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`}
               lat={s.lat}
               lng={s.lng}
