@@ -2,108 +2,142 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+export const runtime = "nodejs";
 
-function sb() {
-  return createClient(SUPABASE_URL, SUPABASE_ANON, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+function makeTraceId() {
+  return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
 }
 
-async function geocodeNominatim(q: string): Promise<{ lat: number; lng: number } | null> {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`;
+function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
 
-  const res = await fetch(url, {
+async function nominatimGeocode(q: string): Promise<{ lat: number; lng: number } | null> {
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("limit", "1");
+  url.searchParams.set("q", q);
+
+  const res = await fetch(url.toString(), {
     headers: {
-      // Nominatim vuole uno user-agent identificabile
+      // IMPORTANT: Nominatim richiede un User-Agent identificabile
       "User-Agent": "NDW-RoutePro/1.0 (notadigitalworks.com)",
-      "Accept": "application/json",
+      "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
     },
-    // cache zero per risultati freschi
-    cache: "no-store",
   });
 
   if (!res.ok) return null;
   const data = (await res.json()) as any[];
-  if (!data?.length) return null;
+  if (!Array.isArray(data) || data.length === 0) return null;
 
   const lat = Number(data[0].lat);
   const lng = Number(data[0].lon);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
 
   return { lat, lng };
 }
 
 export async function POST(req: Request) {
+  const traceId = makeTraceId();
+
   try {
     const auth = req.headers.get("authorization") || "";
     const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!token) {
+      return NextResponse.json({ error: "Unauthorized", traceId }, { status: 401 });
+    }
 
-    const body = await req.json();
-    const routeId = String(body?.routeId || "");
-    if (!routeId) return NextResponse.json({ error: "Missing routeId" }, { status: 400 });
+    const body = await req.json().catch(() => null);
+    const routeId = body?.routeId;
+    if (typeof routeId !== "string" || routeId.length < 8) {
+      return NextResponse.json({ error: "routeId missing/invalid", traceId }, { status: 400 });
+    }
 
-    const supabase = sb();
+    const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    if (!SUPABASE_URL || !SERVICE_ROLE) {
+      return NextResponse.json(
+        { error: "Server misconfigured (missing env)", traceId },
+        { status: 500 }
+      );
+    }
 
-    // verify user
-    const { data: uData, error: uErr } = await supabase.auth.getUser(token);
-    if (uErr || !uData.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    const userId = uData.user.id;
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
-    // verify route ownership
-    const { data: routeRow, error: rErr } = await supabase
+    // valida utente dal token
+    const { data: userRes, error: userErr } = await admin.auth.getUser(token);
+    if (userErr || !userRes?.user) {
+      return NextResponse.json({ error: "Unauthorized", detail: userErr?.message, traceId }, { status: 401 });
+    }
+    const userId = userRes.user.id;
+
+    // verifica ownership rotta
+    const { data: routeRow, error: routeErr } = await admin
       .from("routes")
       .select("id,user_id")
       .eq("id", routeId)
-      .single();
+      .maybeSingle();
 
-    if (rErr || !routeRow) return NextResponse.json({ error: "Route not found" }, { status: 404 });
-    if (routeRow.user_id !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (routeErr || !routeRow) {
+      return NextResponse.json({ error: "Route not found", detail: routeErr, traceId }, { status: 404 });
+    }
+    if (routeRow.user_id !== userId) {
+      return NextResponse.json({ error: "Forbidden", traceId }, { status: 403 });
+    }
 
-    // load stops missing coords (max 6 each call)
-    const { data: stops, error: sErr } = await supabase
+    // prendi stop senza coords (limite 25 per chiamata)
+    const { data: stops, error: stopsErr } = await admin
       .from("route_stops")
       .select("id,address,lat,lng")
       .eq("route_id", routeId)
       .is("lat", null)
-      .is("lng", null)
-      .limit(6);
+      .limit(25);
 
-    if (sErr) return NextResponse.json({ error: sErr.message }, { status: 500 });
+    if (stopsErr) {
+      return NextResponse.json({ error: "Stops query failed", detail: stopsErr, traceId }, { status: 500 });
+    }
 
     if (!stops || stops.length === 0) {
-      return NextResponse.json({ updated: 0, remaining: 0 });
+      return NextResponse.json({ ok: true, updated: 0, message: "Nothing to geocode", traceId });
     }
 
     let updated = 0;
+    const failures: Array<{ id: string; address: string }> = [];
 
-    for (const st of stops) {
-      const q = String(st.address || "").trim();
-      if (!q) continue;
+    for (const s of stops as any[]) {
+      const addr = String(s.address || "").trim();
+      if (!addr) {
+        failures.push({ id: s.id, address: "" });
+        continue;
+      }
 
-      const coords = await geocodeNominatim(q);
-      if (!coords) continue;
+      const result = await nominatimGeocode(addr);
+      if (!result) {
+        failures.push({ id: s.id, address: addr });
+        await sleep(1000);
+        continue;
+      }
 
-      const { error: upErr } = await supabase
+      const { error: upErr } = await admin
         .from("route_stops")
-        .update({ lat: coords.lat, lng: coords.lng })
-        .eq("id", st.id);
+        .update({ lat: result.lat, lng: result.lng })
+        .eq("id", s.id);
 
       if (!upErr) updated++;
+      else failures.push({ id: s.id, address: addr });
+
+      // throttle 1 req/sec
+      await sleep(1000);
     }
 
-    // check remaining
-    const { count } = await supabase
-      .from("route_stops")
-      .select("*", { count: "exact", head: true })
-      .eq("route_id", routeId)
-      .is("lat", null)
-      .is("lng", null);
-
-    return NextResponse.json({ updated, remaining: count ?? null });
+    return NextResponse.json({
+      ok: true,
+      updated,
+      attempted: stops.length,
+      failures: failures.slice(0, 5),
+      traceId,
+    });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? "Geocode error" }, { status: 500 });
+    return NextResponse.json({ error: "Geocode failed", detail: e?.message ?? e, traceId }, { status: 500 });
   }
 }
