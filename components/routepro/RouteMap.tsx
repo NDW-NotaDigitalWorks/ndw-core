@@ -4,17 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Map as LeafletMap } from "leaflet";
 
-// React-Leaflet dynamic (evita SSR issues)
-const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
-const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
-const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), { ssr: false });
+// ✅ Import diretto (client-only) — niente require + niente ts-expect-error
+import * as L from "leaflet";
 
 type MapStop = {
   id: string;
-  af: number; // numero Amazon Flex (o fallback)
-  opt: number; // numero ottimizzato
+  af: number;
+  opt: number;
   address: string;
   lat: number;
   lng: number;
@@ -27,6 +23,12 @@ type Props = {
   onSelectStop?: (id: string) => void;
 };
 
+const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
+const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
+const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), { ssr: false });
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -35,11 +37,12 @@ export function RouteMap({ stops, onSelectStop }: Props) {
   const mapRef = useRef<LeafletMap | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const pointsAll = useMemo(() => stops.map((s) => [s.lat, s.lng] as [number, number]), [stops]);
+  const pointsAll = useMemo(
+    () => stops.map((s) => [s.lat, s.lng] as [number, number]),
+    [stops]
+  );
 
-  const nextStop = useMemo(() => {
-    return stops.find((s) => !s.isDone) ?? null;
-  }, [stops]);
+  const nextStop = useMemo(() => stops.find((s) => !s.isDone) ?? null, [stops]);
 
   const pointsRemaining = useMemo(() => {
     if (!nextStop) return [];
@@ -52,33 +55,18 @@ export function RouteMap({ stops, onSelectStop }: Props) {
   const total = stops.length;
   const remaining = total - done;
 
-  // Fit bounds all'inizio e quando cambia lista (con import dinamico di leaflet)
+  // fit bounds quando cambia lista
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    if (pointsAll.length === 1) {
-      map.setView(pointsAll[0], 14);
+    if (pointsAll.length < 2) {
+      if (pointsAll.length === 1) map.setView(pointsAll[0], 14);
       return;
     }
-    if (pointsAll.length < 2) return;
 
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const L = await import("leaflet");
-        if (cancelled) return;
-        const bounds = L.latLngBounds(pointsAll);
-        map.fitBounds(bounds, { padding: [24, 24] });
-      } catch {
-        // silenzioso
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    const bounds = L.latLngBounds(pointsAll);
+    map.fitBounds(bounds, { padding: [24, 24] });
   }, [pointsAll]);
 
   // invalidateSize quando toggli fullscreen
@@ -93,7 +81,6 @@ export function RouteMap({ stops, onSelectStop }: Props) {
     if (!nextStop) return;
     const map = mapRef.current;
     if (!map) return;
-
     map.setView([nextStop.lat, nextStop.lng], clamp(map.getZoom(), 13, 17), { animate: true });
     onSelectStop?.(nextStop.id);
   }
@@ -105,7 +92,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
       }
       style={isFullscreen ? undefined : { height: 520 }}
     >
-      {/* TOP OVERLAY (Flex-like) */}
+      {/* TOP OVERLAY */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500] p-3">
         <div className="pointer-events-auto flex items-center justify-between gap-2">
           <div className="rounded-2xl border bg-white/95 px-3 py-2 shadow-sm">
@@ -124,7 +111,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
             <button
               type="button"
               onClick={centerOnNext}
-              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm disabled:opacity-50"
+              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
               disabled={!nextStop}
             >
               Prossimo
@@ -141,7 +128,6 @@ export function RouteMap({ stops, onSelectStop }: Props) {
         </div>
       </div>
 
-      {/* MAP */}
       <MapContainer
         center={pointsAll[0] ?? [45.5, 9.2]}
         zoom={12}
@@ -149,29 +135,19 @@ export function RouteMap({ stops, onSelectStop }: Props) {
       >
         <MapRefBinder mapRef={mapRef} />
 
-        <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
+        <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {/* Polyline “tutto” */}
         {pointsAll.length >= 2 && <Polyline positions={pointsAll} />}
-
-        {/* Polyline “rimanente” */}
         {pointsRemaining.length >= 2 && <Polyline positions={pointsRemaining} />}
 
         {stops.map((s) => (
           <Marker
             key={s.id}
             position={[s.lat, s.lng]}
-            eventHandlers={{
-              click: () => onSelectStop?.(s.id),
-            }}
+            eventHandlers={{ click: () => onSelectStop?.(s.id) }}
           >
             <Popup>
-              <div className="text-sm font-semibold">
-                OPT #{s.opt} • AF #{s.af}
-              </div>
+              <div className="text-sm font-semibold">OPT #{s.opt} • AF #{s.af}</div>
               <div className="text-xs text-neutral-700">{s.address}</div>
               <div className="mt-1 text-xs">{s.isDone ? "✅ Fatto" : "⏳ Da fare"}</div>
             </Popup>
@@ -182,22 +158,17 @@ export function RouteMap({ stops, onSelectStop }: Props) {
   );
 }
 
+// helper stabile per ottenere la map instance
 function MapRefBinder({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | null> }) {
-  // Import dinamico "safe": evita SSR e non rompe i types
-  const UseMapBinder = useMemo(() => {
-    return dynamic(async () => {
-      const mod = await import("react-leaflet");
-      const useMap = mod.useMap as unknown as () => LeafletMap;
+  // import statico in client component ok
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { useMap } = require("react-leaflet") as { useMap: () => LeafletMap };
+  const map = useMap();
 
-      return function Binder() {
-        const map = useMap();
-        useEffect(() => {
-          mapRef.current = map;
-        }, [map]);
-        return null;
-      };
-    }, { ssr: false });
-  }, [mapRef]);
+  useEffect(() => {
+    mapRef.current = map;
+    (window as any).__reactLeaflet_map = map; // debug opzionale
+  }, [map, mapRef]);
 
-  return <UseMapBinder />;
+  return null;
 }
