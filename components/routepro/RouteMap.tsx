@@ -37,34 +37,37 @@ function asLatLngs(stops: MapStop[]) {
 
 // Piccole icone HTML (stile “pallino”)
 // Usiamo divIcon (leaflet) solo a runtime, quindi lo carichiamo con require dentro useMemo.
-function buildDotIcon(kind: "pickup" | "return" | "delivery", label: string, active: boolean, done: boolean): DivIcon | null {
+function buildDotIcon(
+  kind: "pickup" | "return" | "delivery",
+  label: string,
+  active: boolean,
+  done: boolean
+): DivIcon | null {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const L = require("leaflet");
 
-    const base =
-      kind === "pickup" ? "📦" : kind === "return" ? "↩️" : label;
+    const text = kind === "pickup" ? "📦" : kind === "return" ? "↩️" : label;
 
-    const ring = active ? "ring-2 ring-black" : "ring-1 ring-neutral-300";
-    const bg =
-      kind === "pickup"
-        ? "bg-white"
-        : kind === "return"
-        ? "bg-white"
-        : done
-        ? "bg-white"
-        : "bg-white";
-
-    const fg =
-      kind === "delivery"
-        ? done
-          ? "text-neutral-700"
-          : "text-black"
-        : "text-black";
+    const bg = done ? "#F3F4F6" : "#FFFFFF";          // grigino se fatto
+    const fg = done ? "#6B7280" : "#111827";          // testo grigio se fatto
+    const border = active ? "2px solid #111827" : "1px solid #D1D5DB";
+    const shadow = active
+      ? "0 2px 10px rgba(0,0,0,.25)"
+      : "0 1px 4px rgba(0,0,0,.15)";
+    const scale = active ? "scale(1.15)" : "scale(1)";
 
     const html = `
-      <div class="ndw-dot ${ring} ${bg} ${fg}">
-        ${base}
+      <div style="
+        width:28px;height:28px;border-radius:9999px;
+        display:flex;align-items:center;justify-content:center;
+        font-size:12px;font-weight:700;
+        background:${bg};color:${fg};
+        border:${border};
+        box-shadow:${shadow};
+        transform:${scale};
+      ">
+        ${text}
       </div>
     `;
 
@@ -79,6 +82,7 @@ function buildDotIcon(kind: "pickup" | "return" | "delivery", label: string, act
     return null;
   }
 }
+
 
 export function RouteMap({ stops, onSelectStop }: Props) {
   const mapRef = useRef<LeafletMap | null>(null);
