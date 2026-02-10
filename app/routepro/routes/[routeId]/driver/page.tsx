@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -41,6 +41,13 @@ type WorkdaySettings = {
   break_minutes: number | null;
   discontinuity_minutes: number | null;
 };
+
+type GeoUI =
+  | { state: "idle" }
+  | { state: "running"; round: number; max: number }
+  | { state: "done"; updatedTotal: number }
+  | { state: "stopped"; updatedTotal: number }
+  | { state: "error"; message: string };
 
 function storageKeyStart(routeId: string) {
   return `ndw_routepro_started_at_${routeId}`;
@@ -117,8 +124,10 @@ export default function DriverModePage() {
   const [dismissBanner, setDismissBanner] = useState(false);
   const lastWarnStatusRef = useRef<WarnStatus | null>(null);
 
-  // geocode soft (non rompe se endpoint non c'è)
+  // geocode
   const geocodeStartedRef = useRef(false);
+  const geocodeUpdatedTotalRef = useRef(0);
+  const [geoUI, setGeoUI] = useState<GeoUI>({ state: "idle" });
 
   useEffect(() => {
     setLastRouteId(routeId);
@@ -204,6 +213,10 @@ export default function DriverModePage() {
 
   const orderedStops = useMemo(() => stops, [stops]);
 
+  const missingCoordsCount = useMemo(() => {
+    return orderedStops.filter((s) => s.lat == null || s.lng == null).length;
+  }, [orderedStops]);
+
   const deliveryStops = useMemo(
     () => orderedStops.filter((s) => s.stop_type === "delivery"),
     [orderedStops]
@@ -253,25 +266,35 @@ export default function DriverModePage() {
       }));
   }, [orderedStops, activeStopId]);
 
-  // 🔥 auto-geocode in background (loop a batch finché completa, max N giri)
-useEffect(() => {
-  if (geocodeStartedRef.current) return;
+  // ======== GEOCODE LOOP (con mini-UX) ========
+  const runGeocodeLoop = useCallback(async () => {
+    if (geocodeStartedRef.current) return;
 
-  const hasMissing = orderedStops.some((s) => s.lat == null || s.lng == null);
-  if (!hasMissing) return;
+    const hasMissing = orderedStops.some((s) => s.lat == null || s.lng == null);
+    if (!hasMissing) {
+      setGeoUI({ state: "idle" });
+      return;
+    }
 
-  geocodeStartedRef.current = true;
+    geocodeStartedRef.current = true;
 
-  (async () => {
     try {
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token || null;
-      if (!token) return;
+      if (!token) {
+        setGeoUI({ state: "error", message: "No session" });
+        geocodeStartedRef.current = false;
+        return;
+      }
 
-      const maxRounds = 8;          // 8 * 25 = 200 stop max (sufficiente per Flex)
-      const delayMs = 1200;         // throttle lato client (in aggiunta al server)
+      const maxRounds = 8;  // 8 * 25 = 200 stop
+      const delayMs = 1200;
 
-      for (let round = 0; round < maxRounds; round++) {
+      geocodeUpdatedTotalRef.current = 0;
+
+      for (let round = 1; round <= maxRounds; round++) {
+        setGeoUI({ state: "running", round, max: maxRounds });
+
         const res = await fetch("/api/routepro/geocode", {
           method: "POST",
           headers: {
@@ -281,29 +304,54 @@ useEffect(() => {
           body: JSON.stringify({ routeId }),
         });
 
-        if (!res.ok) break;
+        if (!res.ok) {
+          setGeoUI({ state: "error", message: `HTTP ${res.status}` });
+          break;
+        }
 
         const data = await res.json().catch(() => ({} as any));
         const updated = typeof data?.updated === "number" ? data.updated : 0;
 
-        // ricarica per vedere punti comparire in mappa
+        geocodeUpdatedTotalRef.current += updated;
+
         await load();
 
-        // se non ha aggiornato nulla, stop (o rimangono indirizzi non risolvibili)
-        if (updated <= 0) break;
+        if (updated <= 0) {
+          const total = geocodeUpdatedTotalRef.current;
+          setGeoUI(total > 0 ? { state: "done", updatedTotal: total } : { state: "stopped", updatedTotal: total });
+          break;
+        }
 
-        // pausa tra un batch e l'altro
+        if (round === maxRounds) {
+          setGeoUI({ state: "done", updatedTotal: geocodeUpdatedTotalRef.current });
+          break;
+        }
+
         await new Promise((r) => setTimeout(r, delayMs));
       }
-    } catch {
-      // silenzioso
+    } catch (e: any) {
+      setGeoUI({ state: "error", message: e?.message ?? "Errore geocode" });
+    } finally {
+      // se abbiamo ancora missing, permettiamo retry manuale (non auto-riparte da solo)
+      geocodeStartedRef.current = false;
     }
-  })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeId, orderedStops]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [routeId, orderedStops.length]);
+  // auto-start una volta quando vede missing coords
+  useEffect(() => {
+    if (missingCoordsCount <= 0) return;
+    if (geoUI.state !== "idle") return;
+    runGeocodeLoop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [missingCoordsCount, routeId]);
 
+  function onRetryGeocode() {
+    setGeoUI({ state: "idle" });
+    runGeocodeLoop();
+  }
 
+  // ======== STATS / PACE ========
   const stats = useMemo(() => {
     if (!startedAt) return null;
     if (!routeCompleted) return null;
@@ -535,16 +583,39 @@ useEffect(() => {
           <div className="flex items-center justify-between gap-2">
             <div>
               <div className="text-xs text-neutral-500">RoutePro • Driver Mode</div>
+
               {activeStop && (
                 <div className="mt-1 text-xs text-neutral-700">
                   Corrente: <b>OPT #{activeStop.optimized_position ?? "—"}</b>{" "}
                   (AF #{activeStop.af_stop_number ?? activeStop.position}) • {activeStop.stop_type}
                 </div>
               )}
+
               <div className="mt-1 text-[11px] text-neutral-500">
                 Consegne: <b>{deliveriesDone}/{totalDeliveries}</b>
                 {pace?.stopsPerHour != null && <> • ritmo: <b>{pace.stopsPerHour}</b> stop/ora</>}
               </div>
+
+              {/* MINI-UX GEO (pulita) */}
+              {(missingCoordsCount > 0 || geoUI.state !== "idle") && (
+                <div className="mt-1 text-[11px] text-neutral-500">
+                  {geoUI.state === "running" && (
+                    <>Geocoding: <b>batch {geoUI.round}/{geoUI.max}</b>…</>
+                  )}
+                  {geoUI.state === "done" && (
+                    <>Geocoding: <b>completato</b> (+{geoUI.updatedTotal})</>
+                  )}
+                  {geoUI.state === "stopped" && (
+                    <>Geocoding: <b>stop</b> (0 aggiornati)</>
+                  )}
+                  {geoUI.state === "error" && (
+                    <>Geocoding: <b className="text-red-600">errore</b> ({geoUI.message})</>
+                  )}
+                  {geoUI.state === "idle" && missingCoordsCount > 0 && (
+                    <>Geocoding: <b>in attesa</b> ({missingCoordsCount} senza coord)</>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2">
@@ -616,9 +687,21 @@ useEffect(() => {
             </div>
           </div>
 
-          <div className="mt-2">
+          <div className="mt-2 grid grid-cols-2 gap-2">
             <Button variant="secondary" className="w-full" onClick={load} type="button">
               Aggiorna
+            </Button>
+
+            {/* Bottone retry geocode (solo se serve) */}
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={onRetryGeocode}
+              disabled={missingCoordsCount <= 0 || geoUI.state === "running"}
+              type="button"
+              title={missingCoordsCount > 0 ? "Riprova geocodifica" : "Tutti gli stop hanno coordinate"}
+            >
+              Riprova geocode
             </Button>
           </div>
         </div>
@@ -638,7 +721,7 @@ useEffect(() => {
               <div className="font-semibold">Mappa non disponibile</div>
               <div className="mt-1 text-xs text-neutral-500">
                 Questa rotta non ha ancora coordinate (lat/lng). Se la geocodifica automatica è attiva,
-                aggiorna tra poco o premi “Aggiorna”.
+                aspetta un attimo oppure premi “Riprova geocode”.
               </div>
               <div className="mt-3">
                 <Button variant="outline" className="w-full" onClick={() => setView("list")} type="button">
