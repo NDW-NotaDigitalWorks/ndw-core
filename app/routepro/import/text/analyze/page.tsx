@@ -46,15 +46,26 @@ export default function ImportTextAnalyzePage() {
         body: JSON.stringify({ rawText: text }),
       });
 
-      const data = await res.json().catch(() => ({} as any));
+      const raw = await res.text();
+      let data: any = {};
+      try {
+        data = raw ? JSON.parse(raw) : {};
+      } catch {
+        data = {};
+      }
 
       if (!res.ok) {
-        const msg = data?.error || `Errore API (${res.status})`;
+        const msg =
+          data?.error
+            ? `API ${res.status}: ${data.error}`
+            : `API ${res.status}: ${raw || "Risposta vuota"}`;
         throw new Error(msg);
       }
 
       const routeId = data?.routeId as string | undefined;
-      if (!routeId) throw new Error("routeId mancante nella risposta API");
+      if (!routeId) {
+        throw new Error(`routeId mancante. Risposta: ${raw || "vuota"}`);
+      }
 
       router.push(routeProPath(`/routes/${routeId}/driver`));
     } catch (e: any) {
@@ -88,17 +99,12 @@ export default function ImportTextAnalyzePage() {
             />
 
             {err && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 whitespace-pre-wrap">
                 {err}
               </div>
             )}
 
-            <Button
-              className="w-full"
-              onClick={onCreateRoute}
-              disabled={!canSubmit || loading}
-              type="button"
-            >
+            <Button className="w-full" onClick={onCreateRoute} disabled={!canSubmit || loading} type="button">
               {loading ? "Creo rotta..." : "✅ Crea rotta"}
             </Button>
 

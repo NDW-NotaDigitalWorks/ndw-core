@@ -4,10 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Map as LeafletMap } from "leaflet";
 
+// React-Leaflet dynamic (evita SSR issues)
+const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
+const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
+const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), { ssr: false });
+
 type MapStop = {
   id: string;
-  af: number;       // numero Amazon Flex (o fallback)
-  opt: number;      // numero ottimizzato
+  af: number; // numero Amazon Flex (o fallback)
+  opt: number; // numero ottimizzato
   address: string;
   lat: number;
   lng: number;
@@ -20,13 +27,6 @@ type Props = {
   onSelectStop?: (id: string) => void;
 };
 
-// React-Leaflet dynamic (evita SSR issues)
-const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import("react-leaflet").then(m => m.Marker), { ssr: false });
-const Popup = dynamic(() => import("react-leaflet").then(m => m.Popup), { ssr: false });
-const Polyline = dynamic(() => import("react-leaflet").then(m => m.Polyline), { ssr: false });
-
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -35,42 +35,51 @@ export function RouteMap({ stops, onSelectStop }: Props) {
   const mapRef = useRef<LeafletMap | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // ordine già “giusto”: ci arriva da driver come mapStops derivato da orderedStops
-  const pointsAll = useMemo(
-    () => stops.map(s => [s.lat, s.lng] as [number, number]),
-    [stops]
-  );
+  const pointsAll = useMemo(() => stops.map((s) => [s.lat, s.lng] as [number, number]), [stops]);
 
   const nextStop = useMemo(() => {
-    // Priorità: delivery non fatto (ma qui non abbiamo stop_type; quindi: primo non fatto)
-    return stops.find(s => !s.isDone) ?? null;
+    return stops.find((s) => !s.isDone) ?? null;
   }, [stops]);
 
   const pointsRemaining = useMemo(() => {
     if (!nextStop) return [];
-    const idx = stops.findIndex(s => s.id === nextStop.id);
+    const idx = stops.findIndex((s) => s.id === nextStop.id);
     if (idx < 0) return [];
-    return stops.slice(idx).map(s => [s.lat, s.lng] as [number, number]);
+    return stops.slice(idx).map((s) => [s.lat, s.lng] as [number, number]);
   }, [stops, nextStop]);
 
-  const done = useMemo(() => stops.filter(s => s.isDone).length, [stops]);
+  const done = useMemo(() => stops.filter((s) => s.isDone).length, [stops]);
   const total = stops.length;
   const remaining = total - done;
 
-  // fit bounds all’inizio e quando cambia la lista
+  // Fit bounds all'inizio e quando cambia lista (con import dinamico di leaflet)
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    if (pointsAll.length < 2) {
-      if (pointsAll.length === 1) map.setView(pointsAll[0], 14);
+
+    if (pointsAll.length === 1) {
+      map.setView(pointsAll[0], 14);
       return;
     }
+    if (pointsAll.length < 2) return;
 
-    // @ts-expect-error Leaflet exists at runtime
-    const L = require("leaflet");
-    const bounds = L.latLngBounds(pointsAll);
-    map.fitBounds(bounds, { padding: [24, 24] });
-  }, [pointsAll.length]);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const L = await import("leaflet");
+        if (cancelled) return;
+        const bounds = L.latLngBounds(pointsAll);
+        map.fitBounds(bounds, { padding: [24, 24] });
+      } catch {
+        // silenzioso
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pointsAll]);
 
   // invalidateSize quando toggli fullscreen
   useEffect(() => {
@@ -84,6 +93,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
     if (!nextStop) return;
     const map = mapRef.current;
     if (!map) return;
+
     map.setView([nextStop.lat, nextStop.lng], clamp(map.getZoom(), 13, 17), { animate: true });
     onSelectStop?.(nextStop.id);
   }
@@ -91,9 +101,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
   return (
     <div
       className={
-        isFullscreen
-          ? "fixed inset-0 z-50 bg-white"
-          : "rounded-2xl border bg-white overflow-hidden"
+        isFullscreen ? "fixed inset-0 z-50 bg-white" : "rounded-2xl border bg-white overflow-hidden"
       }
       style={isFullscreen ? undefined : { height: 520 }}
     >
@@ -116,7 +124,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
             <button
               type="button"
               onClick={centerOnNext}
-              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
+              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm disabled:opacity-50"
               disabled={!nextStop}
             >
               Prossimo
@@ -124,7 +132,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
 
             <button
               type="button"
-              onClick={() => setIsFullscreen(v => !v)}
+              onClick={() => setIsFullscreen((v) => !v)}
               className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
             >
               {isFullscreen ? "Esci" : "⛶ Guida"}
@@ -138,31 +146,19 @@ export function RouteMap({ stops, onSelectStop }: Props) {
         center={pointsAll[0] ?? [45.5, 9.2]}
         zoom={12}
         style={{ height: "100%", width: "100%" }}
-        // ✅ FIX TypeScript: react-leaflet types a volte vogliono () => void
-        whenReady={() => {
-          // @ts-expect-error runtime ok
-          const map = (window as any).__reactLeaflet_map;
-          // fallback: recupero dalla ref interna via event non sempre tipizzato
-          // quindi settiamo ref in modo safe:
-          // NOTE: in molti setup mapRef viene settata via useMap(), qui facciamo più semplice sotto.
-        }}
       >
         <MapRefBinder mapRef={mapRef} />
 
         <TileLayer
-          attribution='&copy; OpenStreetMap contributors'
+          attribution="&copy; OpenStreetMap contributors"
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
         {/* Polyline “tutto” */}
-        {pointsAll.length >= 2 && (
-          <Polyline positions={pointsAll} />
-        )}
+        {pointsAll.length >= 2 && <Polyline positions={pointsAll} />}
 
-        {/* Polyline “rimanente” (effetto progress) */}
-        {pointsRemaining.length >= 2 && (
-          <Polyline positions={pointsRemaining} />
-        )}
+        {/* Polyline “rimanente” */}
+        {pointsRemaining.length >= 2 && <Polyline positions={pointsRemaining} />}
 
         {stops.map((s) => (
           <Marker
@@ -186,16 +182,22 @@ export function RouteMap({ stops, onSelectStop }: Props) {
   );
 }
 
-// helper per ottenere la map instance in modo stabile
 function MapRefBinder({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | null> }) {
-  const useMap = require("react-leaflet").useMap as () => LeafletMap;
-  const map = useMap();
+  // Import dinamico "safe": evita SSR e non rompe i types
+  const UseMapBinder = useMemo(() => {
+    return dynamic(async () => {
+      const mod = await import("react-leaflet");
+      const useMap = mod.useMap as unknown as () => LeafletMap;
 
-  useEffect(() => {
-    mapRef.current = map;
-    // esponi per debug se vuoi
-    (window as any).__reactLeaflet_map = map;
-  }, [map, mapRef]);
+      return function Binder() {
+        const map = useMap();
+        useEffect(() => {
+          mapRef.current = map;
+        }, [map]);
+        return null;
+      };
+    }, { ssr: false });
+  }, [mapRef]);
 
-  return null;
+  return <UseMapBinder />;
 }
