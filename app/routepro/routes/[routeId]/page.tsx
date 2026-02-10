@@ -7,13 +7,17 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { getRouteProTier } from "@/lib/entitlement";
+
+type RouteStatus = "draft" | "optimized" | string;
 
 type RouteRow = {
   id: string;
-  name: string;
+  name: string | null;
   route_date: string | null;
-  status: "draft" | "optimized";
-  total_stops: number;
+  status: RouteStatus | null;
+  total_stops: number | null;
+  created_at?: string | null; // fallback se c'è in DB
 };
 
 type StopRow = {
@@ -48,38 +52,61 @@ function toCsvRow(values: (string | number | null | undefined)[]) {
   return escaped.join(",");
 }
 
+function formatDateMaybe(d: string | null | undefined): string {
+  if (!d) return "—";
+  // se è ISO, proviamo a renderla carina senza rompere nulla
+  const dt = new Date(d);
+  if (Number.isNaN(dt.getTime())) return d; // già in formato testo (es. 10/02/2026)
+  return dt.toLocaleDateString("it-IT");
+}
+
+function normalizeStatus(s: RouteStatus | null | undefined): string {
+  const v = (s ?? "draft").toString();
+  return v;
+}
+
 export default function RouteDetailsPage() {
   const router = useRouter();
   const params = useParams<{ routeId: string }>();
   const routeId = params.routeId;
 
   const [loading, setLoading] = useState(true);
+  const [tier, setTier] = useState<string>("STARTER");
+
   const [route, setRoute] = useState<RouteRow | null>(null);
   const [stops, setStops] = useState<StopRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [optimizing, setOptimizing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-
   const [copied, setCopied] = useState(false);
 
   const orderedStops = useMemo(() => {
     const hasOptimized = stops.some((s) => s.optimized_position != null);
     const arr = [...stops];
     return hasOptimized
-      ? arr.sort(
-          (a, b) =>
-            (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999)
-        )
+      ? arr.sort((a, b) => (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999))
       : arr.sort((a, b) => a.position - b.position);
   }, [stops]);
 
   const hasOptimizedOrder = useMemo(() => {
-    return (
-      route?.status === "optimized" ||
-      orderedStops.some((s) => s.optimized_position != null)
-    );
+    return normalizeStatus(route?.status) === "optimized" || orderedStops.some((s) => s.optimized_position != null);
   }, [orderedStops, route]);
+
+  // ✅ fallback stop count: se total_stops manca, uso la lunghezza della lista
+  const totalStopsComputed = useMemo(() => {
+    const fromDb = route?.total_stops;
+    if (typeof fromDb === "number" && fromDb > 0) return fromDb;
+    return stops.length;
+  }, [route, stops.length]);
+
+  const routeDateComputed = useMemo(() => {
+    // 1) route_date
+    if (route?.route_date) return route.route_date;
+    // 2) created_at se presente (non rompe se la colonna non esiste: resta undefined)
+    if (route?.created_at) return route.created_at;
+    return null;
+  }, [route]);
 
   const exportText = useMemo(() => {
     return orderedStops.map((s, idx) => `${idx + 1}. ${s.address}`).join("\n");
@@ -96,6 +123,12 @@ export default function RouteDetailsPage() {
         return;
       }
 
+      // tier label
+      const t = await getRouteProTier();
+      setTier((t ?? "starter").toUpperCase());
+
+      // ⚠️ Nota: se created_at non esiste in DB, Supabase può dare errore.
+      // Per evitarlo: facciamo prima una select “safe” e NON includiamo created_at.
       const { data: routeRow, error: routeErr } = await supabase
         .from("routes")
         .select("id,name,route_date,status,total_stops")
@@ -131,7 +164,6 @@ export default function RouteDetailsPage() {
     setOptimizing(true);
 
     try {
-      // get token for hybrid ORS
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token || null;
 
@@ -155,32 +187,21 @@ export default function RouteDetailsPage() {
       if (!res.ok) throw new Error(data?.error ?? "Optimize failed");
 
       const optimizedStopIds: string[] = data.optimizedStopIds ?? [];
-      const stopsWithCoords: { id: string; lat: number; lng: number }[] =
-        data.stopsWithCoords ?? [];
+      const stopsWithCoords: { id: string; lat: number; lng: number }[] = data.stopsWithCoords ?? [];
       const algorithm: string = data.algorithm ?? "unknown";
 
-      if (!optimizedStopIds.length)
-        throw new Error("Nessun ordine ottimizzato ricevuto.");
+      if (!optimizedStopIds.length) throw new Error("Nessun ordine ottimizzato ricevuto.");
 
       for (const s of stopsWithCoords) {
-        await supabase
-          .from("route_stops")
-          .update({ lat: s.lat, lng: s.lng })
-          .eq("id", s.id);
+        await supabase.from("route_stops").update({ lat: s.lat, lng: s.lng }).eq("id", s.id);
       }
 
       for (let i = 0; i < optimizedStopIds.length; i++) {
         const stopId = optimizedStopIds[i];
-        await supabase
-          .from("route_stops")
-          .update({ optimized_position: i + 1 })
-          .eq("id", stopId);
+        await supabase.from("route_stops").update({ optimized_position: i + 1 }).eq("id", stopId);
       }
 
-      await supabase
-        .from("routes")
-        .update({ status: "optimized" })
-        .eq("id", routeId);
+      await supabase.from("routes").update({ status: "optimized" }).eq("id", routeId);
 
       await supabase.from("route_runs").insert({
         route_id: routeId,
@@ -235,22 +256,22 @@ export default function RouteDetailsPage() {
 
     const csv = [header, ...rows].join("\n");
     const safeName = (route.name || "route").replace(/[^\w\-]+/g, "_");
-    const datePart = route.route_date ? `${route.route_date}_` : "";
+    const datePart = routeDateComputed ? `${formatDateMaybe(routeDateComputed)}_` : "";
     downloadTextFile(`${datePart}${safeName}_export.csv`, csv, "text/csv");
   }
+
+  const statusLabel = normalizeStatus(route?.status);
 
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
       <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
-            <span className="text-sm font-semibold tracking-tight">
-              RoutePro — Dettaglio rotta
-            </span>
+            <span className="text-sm font-semibold tracking-tight">RoutePro — Dettaglio rotta</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link href={`/routepro/routes/${routeId}/driver`}>
               <Button>Driver Mode</Button>
             </Link>
@@ -271,25 +292,26 @@ export default function RouteDetailsPage() {
         {loading && <div className="text-sm text-neutral-600">Caricamento...</div>}
 
         {error && (
-          <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
-            {error}
-          </div>
+          <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">{error}</div>
         )}
 
         {!loading && !error && route && (
           <div className="space-y-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">
-                  Starter • {route.status}
+                  {tier} • {statusLabel}
                 </p>
-                <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-                  {route.name}
+
+                <h1 className="mt-2 truncate text-2xl font-semibold tracking-tight sm:text-3xl">
+                  {route.name ?? "Senza nome"}
                 </h1>
-                <p className="mt-2 text-sm text-neutral-600">
-                  Data: {route.route_date ?? "—"} • Stop: {route.total_stops} • Stato:{" "}
-                  {route.status}
-                </p>
+
+                <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-neutral-600">
+                  <span>Data: <b className="text-neutral-800">{formatDateMaybe(routeDateComputed)}</b></span>
+                  <span>Stop: <b className="text-neutral-800">{totalStopsComputed}</b></span>
+                  <span>Stato: <b className="text-neutral-800">{statusLabel}</b></span>
+                </div>
               </div>
 
               <div className="flex flex-col gap-2 sm:flex-row">
@@ -303,13 +325,11 @@ export default function RouteDetailsPage() {
             </div>
 
             {msg && (
-              <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">
-                {msg}
-              </div>
+              <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">{msg}</div>
             )}
 
             <Card className="rounded-2xl">
-              <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base">
                   Export veloce ({hasOptimizedOrder ? "ordine ottimizzato" : "ordine originale"})
                 </CardTitle>
