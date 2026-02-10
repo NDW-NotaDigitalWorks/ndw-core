@@ -4,13 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { Map as LeafletMap } from "leaflet";
 
-// ✅ Import diretto (client-only) — niente require + niente ts-expect-error
-import * as L from "leaflet";
-
 type MapStop = {
   id: string;
-  af: number;
-  opt: number;
+  af: number; // numero Amazon Flex (o fallback)
+  opt: number; // numero ottimizzato
   address: string;
   lat: number;
   lng: number;
@@ -23,11 +20,12 @@ type Props = {
   onSelectStop?: (id: string) => void;
 };
 
+// React-Leaflet dynamic (evita SSR issues)
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
-const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
 const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), { ssr: false });
+const CircleMarker = dynamic(() => import("react-leaflet").then((m) => m.CircleMarker), { ssr: false });
+const Tooltip = dynamic(() => import("react-leaflet").then((m) => m.Tooltip), { ssr: false });
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -55,7 +53,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
   const total = stops.length;
   const remaining = total - done;
 
-  // fit bounds quando cambia lista
+  // fit bounds quando cambia la lista
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -65,9 +63,10 @@ export function RouteMap({ stops, onSelectStop }: Props) {
       return;
     }
 
+    const L = require("leaflet");
     const bounds = L.latLngBounds(pointsAll);
     map.fitBounds(bounds, { padding: [24, 24] });
-  }, [pointsAll]);
+  }, [pointsAll.length]);
 
   // invalidateSize quando toggli fullscreen
   useEffect(() => {
@@ -88,7 +87,9 @@ export function RouteMap({ stops, onSelectStop }: Props) {
   return (
     <div
       className={
-        isFullscreen ? "fixed inset-0 z-50 bg-white" : "rounded-2xl border bg-white overflow-hidden"
+        isFullscreen
+          ? "fixed inset-0 z-50 bg-white"
+          : "rounded-2xl border bg-white overflow-hidden"
       }
       style={isFullscreen ? undefined : { height: 520 }}
     >
@@ -111,7 +112,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
             <button
               type="button"
               onClick={centerOnNext}
-              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
+              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm disabled:opacity-50"
               disabled={!nextStop}
             >
               Prossimo
@@ -128,46 +129,64 @@ export function RouteMap({ stops, onSelectStop }: Props) {
         </div>
       </div>
 
-      <MapContainer
-        center={pointsAll[0] ?? [45.5, 9.2]}
-        zoom={12}
-        style={{ height: "100%", width: "100%" }}
-      >
+      <MapContainer center={pointsAll[0] ?? [45.5, 9.2]} zoom={12} style={{ height: "100%", width: "100%" }}>
         <MapRefBinder mapRef={mapRef} />
 
         <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        {pointsAll.length >= 2 && <Polyline positions={pointsAll} />}
-        {pointsRemaining.length >= 2 && <Polyline positions={pointsRemaining} />}
+        {/* Polyline “totale” (sottile tratteggiata) */}
+        {pointsAll.length >= 2 && (
+          <Polyline
+            positions={pointsAll}
+            pathOptions={{ weight: 3, dashArray: "6 8", opacity: 0.45 }}
+          />
+        )}
 
-        {stops.map((s) => (
-          <Marker
-            key={s.id}
-            position={[s.lat, s.lng]}
-            eventHandlers={{ click: () => onSelectStop?.(s.id) }}
-          >
-            <Popup>
-              <div className="text-sm font-semibold">OPT #{s.opt} • AF #{s.af}</div>
-              <div className="text-xs text-neutral-700">{s.address}</div>
-              <div className="mt-1 text-xs">{s.isDone ? "✅ Fatto" : "⏳ Da fare"}</div>
-            </Popup>
-          </Marker>
-        ))}
+        {/* Polyline “rimanente” (più evidente) */}
+        {pointsRemaining.length >= 2 && (
+          <Polyline
+            positions={pointsRemaining}
+            pathOptions={{ weight: 6, opacity: 0.9 }}
+          />
+        )}
+
+        {/* Pallini numerati (no marker Leaflet, quindi niente “Mark”) */}
+        {stops.map((s) => {
+          const isNext = nextStop?.id === s.id;
+          const radius = s.isActive ? 10 : isNext ? 9 : 7;
+
+          return (
+            <CircleMarker
+              key={s.id}
+              center={[s.lat, s.lng]}
+              radius={radius}
+              pathOptions={{
+                weight: s.isActive ? 3 : 2,
+                opacity: s.isDone ? 0.5 : 0.95,
+                fillOpacity: s.isDone ? 0.25 : 0.8,
+              }}
+              eventHandlers={{
+                click: () => onSelectStop?.(s.id),
+              }}
+            >
+              <Tooltip direction="center" permanent opacity={1}>
+                <div className="text-[11px] font-semibold">{s.opt}</div>
+              </Tooltip>
+            </CircleMarker>
+          );
+        })}
       </MapContainer>
     </div>
   );
 }
 
-// helper stabile per ottenere la map instance
+// helper per ottenere la map instance in modo stabile
 function MapRefBinder({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | null> }) {
-  // import statico in client component ok
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { useMap } = require("react-leaflet") as { useMap: () => LeafletMap };
+  const useMap = require("react-leaflet").useMap as () => LeafletMap;
   const map = useMap();
 
   useEffect(() => {
     mapRef.current = map;
-    (window as any).__reactLeaflet_map = map; // debug opzionale
   }, [map, mapRef]);
 
   return null;
