@@ -2,77 +2,48 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-const STARTER_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL || "";
-const PRO_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_PRO_URL || "";
-const ELITE_URL = process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_ELITE_URL || "";
+import { Button } from "@/components/ui/button";
 
 export default function HubPage() {
   const router = useRouter();
-  const [checking, setChecking] = useState(true);
   const [email, setEmail] = useState<string | null>(null);
-  const [upgradeTarget, setUpgradeTarget] = useState<string | null>(null);
 
+  // Carica l'email dell'utente (già autenticato dal layout server-side)
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
-      if (!data.user) {
-        router.replace("/login");
-        return;
-      }
-      setEmail(data.user.email ?? null);
-
-      const params = new URLSearchParams(window.location.search);
-      setUpgradeTarget(params.get("upgrade"));
-
-      setChecking(false);
+      setEmail(data.user?.email ?? null);
     })();
-  }, [router]);
+  }, []);
 
   async function onLogout() {
     await supabase.auth.signOut();
     router.replace("/login");
   }
 
-  if (checking) {
-    return (
-      <main className="min-h-dvh bg-white text-neutral-900">
-        <div className="mx-auto w-full max-w-5xl px-4 py-10 text-sm text-neutral-600">
-          Caricamento NDW Hub...
-        </div>
-      </main>
-    );
-  }
-
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
-      <header className="sticky top-0 z-10 border-b bg-[#050B1E]/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3 text-white">
-          <div className="flex items-center gap-3">
-            <Image src="/ndw-logo.png" alt="NDW" width={36} height={36} priority />
-            <div className="flex flex-col leading-tight">
+      <header className="sticky top-0 z-10 border-b bg-white/80 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-4 py-3">
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-8 rounded-2xl border bg-neutral-50" />
+            <div className="flex flex-col">
               <span className="text-sm font-semibold tracking-tight">NDW Hub</span>
-              {email && <span className="text-[11px] text-sky-300">{email}</span>}
+              {email && (
+                <span className="text-[11px] text-neutral-500">{email}</span>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <Link href="/">
-              <Button variant="ghost" className="text-white hover:bg-white/10">
-                Home
-              </Button>
+              <Button variant="ghost">Home</Button>
             </Link>
-            <Button
-              variant="outline"
-              className="border-sky-400 text-sky-300 hover:bg-sky-400/10"
-              onClick={onLogout}
-            >
+            <Button variant="outline" onClick={onLogout}>
               Logout
             </Button>
           </div>
@@ -82,88 +53,47 @@ export default function HubPage() {
       <section className="mx-auto w-full max-w-5xl px-4 py-8">
         <div className="mb-6">
           <p className="text-xs font-medium uppercase tracking-wider text-neutral-500">
-            NDW Core
+            Dashboard
           </p>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
-            Dashboard operativa
+            Benvenuto in NDW Hub
           </h1>
           <p className="mt-2 text-sm leading-relaxed text-neutral-600">
-            Strumenti NDW Core + prodotti verticali come RoutePro.
+            Ora /hub è protetto anche server-side. Prossimo step: integrazione Whop + NDW Core funzioni.
           </p>
         </div>
 
-        {upgradeTarget === "routepro" && (
-          <Card className="mb-6 rounded-2xl border">
-            <CardHeader>
-              <CardTitle className="text-base">Sblocca RoutePro</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-neutral-600">
-              <p>Scegli il piano. Starter è perfetto per iniziare; Pro/Elite sbloccano funzioni avanzate.</p>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <KpiCard title="Prodotti attivi" value="1" note="RoutePro (MVP)" />
+          <KpiCard title="Stato piano" value="Free" note="Upgrade quando vuoi" />
+          <KpiCard title="Automazioni" value="0" note="in arrivo" />
+        </div>
 
-              <div className="grid gap-2 sm:grid-cols-3">
-                <a href={STARTER_URL} target="_blank" rel="noreferrer">
-                  <Button className="w-full" disabled={!STARTER_URL}>
-                    Starter 19€
-                  </Button>
-                </a>
-                <a href={PRO_URL} target="_blank" rel="noreferrer">
-                  <Button variant="outline" className="w-full" disabled={!PRO_URL}>
-                    Pro 49€
-                  </Button>
-                </a>
-                <a href={ELITE_URL} target="_blank" rel="noreferrer">
-                  <Button variant="outline" className="w-full" disabled={!ELITE_URL}>
-                    Elite 79€
-                  </Button>
-                </a>
-              </div>
-
-              <Link href="/routepro">
-                <Button variant="secondary" className="w-full sm:w-auto">
-                  Riprova accesso
-                </Button>
-              </Link>
-
-              {(!STARTER_URL || !PRO_URL || !ELITE_URL) && (
-                <p className="text-xs text-red-600">
-                  Mancano env checkout: NEXT_PUBLIC_WHOP_ROUTEPRO_*_URL
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle className="text-base">Strumenti NDW Core</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Link href="/hub/shifts">
-                <Button variant="outline" className="w-full justify-start">Turni</Button>
-              </Link>
-              <Link href="/hub/cards">
-                <Button variant="outline" className="w-full justify-start">Schede lavoro</Button>
-              </Link>
-              <Link href="/hub/checklists">
-                <Button variant="outline" className="w-full justify-start">Checklist</Button>
-              </Link>
-            </CardContent>
-          </Card>
-
+        <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Card className="rounded-2xl">
             <CardHeader>
               <CardTitle className="text-base">Prodotti</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
+              <ProductRow name="RoutePro" badge="MVP" href="/routepro" />
+              <ProductRow name="Ristorazione" badge="In arrivo" href="#" disabled />
+              <ProductRow name="Beauty" badge="In arrivo" href="#" disabled />
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl">
+            <CardHeader>
+              <CardTitle className="text-base">Azioni rapide</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2">
               <Link href="/routepro">
                 <Button className="w-full justify-start">Apri RoutePro</Button>
               </Link>
               <Button variant="outline" className="w-full justify-start" disabled>
-                Ristorazione (in arrivo)
+                Gestisci profilo (coming soon)
               </Button>
-              <Button variant="outline" className="w-full justify-start" disabled>
-                Beauty (in arrivo)
+              <Button variant="secondary" className="w-full justify-start" disabled>
+                Vedi piani (coming soon)
               </Button>
             </CardContent>
           </Card>
@@ -171,4 +101,57 @@ export default function HubPage() {
       </section>
     </main>
   );
+}
+
+function KpiCard({
+  title,
+  value,
+  note,
+}: {
+  title: string;
+  value: string;
+  note: string;
+}) {
+  return (
+    <Card className="rounded-2xl">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium text-neutral-600">
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="text-3xl font-semibold tracking-tight">{value}</div>
+        <div className="mt-1 text-xs text-neutral-500">{note}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ProductRow({
+  name,
+  badge,
+  href,
+  disabled,
+}: {
+  name: string;
+  badge: string;
+  href: string;
+  disabled?: boolean;
+}) {
+  const row = (
+    <div
+      className={[
+        "flex items-center justify-between rounded-xl border bg-white px-3 py-2",
+        disabled ? "opacity-60" : "hover:bg-neutral-50",
+      ].join(" ")}
+    >
+      <span className="text-sm font-medium">{name}</span>
+      <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-600">
+        {badge}
+      </span>
+    </div>
+  );
+
+  if (disabled) return row;
+  return <Link href={href}>{row}</Link>;
 }
