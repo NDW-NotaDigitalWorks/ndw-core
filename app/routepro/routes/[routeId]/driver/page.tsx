@@ -253,37 +253,56 @@ export default function DriverModePage() {
       }));
   }, [orderedStops, activeStopId]);
 
-  // 🔥 auto-geocode (soft) se mancano lat/lng (non rompe se endpoint non esiste)
-  useEffect(() => {
-    if (geocodeStartedRef.current) return;
+  // 🔥 auto-geocode in background (loop a batch finché completa, max N giri)
+useEffect(() => {
+  if (geocodeStartedRef.current) return;
 
-    const hasMissing = orderedStops.some((s) => s.lat == null || s.lng == null);
-    if (!hasMissing) return;
+  const hasMissing = orderedStops.some((s) => s.lat == null || s.lng == null);
+  if (!hasMissing) return;
 
-    geocodeStartedRef.current = true;
+  geocodeStartedRef.current = true;
 
-    (async () => {
-      try {
-        const session = await supabase.auth.getSession();
-        const token = session.data.session?.access_token || null;
+  (async () => {
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token || null;
+      if (!token) return;
 
+      const maxRounds = 8;          // 8 * 25 = 200 stop max (sufficiente per Flex)
+      const delayMs = 1200;         // throttle lato client (in aggiunta al server)
+
+      for (let round = 0; round < maxRounds; round++) {
         const res = await fetch("/api/routepro/geocode", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ routeId }),
         });
 
-        if (!res.ok) return;
+        if (!res.ok) break;
+
+        const data = await res.json().catch(() => ({} as any));
+        const updated = typeof data?.updated === "number" ? data.updated : 0;
+
+        // ricarica per vedere punti comparire in mappa
         await load();
-      } catch {
-        // silenzioso
+
+        // se non ha aggiornato nulla, stop (o rimangono indirizzi non risolvibili)
+        if (updated <= 0) break;
+
+        // pausa tra un batch e l'altro
+        await new Promise((r) => setTimeout(r, delayMs));
       }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routeId, orderedStops.length]);
+    } catch {
+      // silenzioso
+    }
+  })();
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [routeId, orderedStops.length]);
+
 
   const stats = useMemo(() => {
     if (!startedAt) return null;
