@@ -129,14 +129,19 @@ export default function DriverModePage() {
   const geocodeUpdatedTotalRef = useRef(0);
   const [geoUI, setGeoUI] = useState<GeoUI>({ state: "idle" });
 
+  // UI: header controlli collassabili (per aumentare spazio lista)
+  const [controlsOpen, setControlsOpen] = useState(false);
+
   useEffect(() => {
     setLastRouteId(routeId);
     setView(getDriverView(routeId));
     setStartedAt(getOrSetStartedAt(routeId));
 
-    const v =
-      (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) || "google";
+    const v = (typeof window !== "undefined" && localStorage.getItem("ndw_nav_app")) || "google";
     setNavApp(v === "waze" ? "waze" : "google");
+
+    // default controlli chiusi su mobile (più spazio)
+    setControlsOpen(false);
 
     (async () => {
       const t = await getRouteProTier();
@@ -173,9 +178,7 @@ export default function DriverModePage() {
 
     const { data, error } = await supabase
       .from("route_stops")
-      .select(
-        "id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done"
-      )
+      .select("id, position, af_stop_number, stop_type, optimized_position, address, packages, lat, lng, is_done")
       .eq("route_id", routeId);
 
     if (!error && data) {
@@ -183,9 +186,7 @@ export default function DriverModePage() {
       const hasOpt = list.some((s) => s.optimized_position != null);
 
       list.sort((a, b) =>
-        hasOpt
-          ? (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999)
-          : a.position - b.position
+        hasOpt ? (a.optimized_position ?? 999999) - (b.optimized_position ?? 999999) : a.position - b.position
       );
 
       setStops(list);
@@ -200,9 +201,7 @@ export default function DriverModePage() {
 
     const { data: sRow } = await supabase
       .from("routepro_settings")
-      .select(
-        "work_start_time,target_end_time,max_end_time,break_minutes,discontinuity_minutes"
-      )
+      .select("work_start_time,target_end_time,max_end_time,break_minutes,discontinuity_minutes")
       .eq("user_id", userData.user.id)
       .maybeSingle();
 
@@ -217,17 +216,11 @@ export default function DriverModePage() {
     return orderedStops.filter((s) => s.lat == null || s.lng == null).length;
   }, [orderedStops]);
 
-  const deliveryStops = useMemo(
-    () => orderedStops.filter((s) => s.stop_type === "delivery"),
-    [orderedStops]
-  );
+  const deliveryStops = useMemo(() => orderedStops.filter((s) => s.stop_type === "delivery"), [orderedStops]);
 
   const totalDeliveries = deliveryStops.length;
 
-  const deliveriesDone = useMemo(
-    () => deliveryStops.filter((s) => s.is_done).length,
-    [deliveryStops]
-  );
+  const deliveriesDone = useMemo(() => deliveryStops.filter((s) => s.is_done).length, [deliveryStops]);
 
   const deliveriesRemaining = totalDeliveries - deliveriesDone;
 
@@ -235,20 +228,11 @@ export default function DriverModePage() {
     return totalDeliveries > 0 && deliveriesDone === totalDeliveries;
   }, [totalDeliveries, deliveriesDone]);
 
-  const activeStop = useMemo(
-    () => orderedStops.find((s) => s.id === activeStopId) ?? null,
-    [orderedStops, activeStopId]
-  );
+  const activeStop = useMemo(() => orderedStops.find((s) => s.id === activeStopId) ?? null, [orderedStops, activeStopId]);
 
-  const nextPendingDelivery = useMemo(
-    () => deliveryStops.find((s) => !s.is_done) ?? null,
-    [deliveryStops]
-  );
+  const nextPendingDelivery = useMemo(() => deliveryStops.find((s) => !s.is_done) ?? null, [deliveryStops]);
 
-  const pickupStop = useMemo(
-    () => orderedStops.find((s) => s.stop_type === "pickup") ?? null,
-    [orderedStops]
-  );
+  const pickupStop = useMemo(() => orderedStops.find((s) => s.stop_type === "pickup") ?? null, [orderedStops]);
 
   // ✅ stop per mappa (solo con coordinate)
   const mapStops = useMemo(() => {
@@ -323,9 +307,7 @@ export default function DriverModePage() {
 
         if (updated <= 0) {
           const total = geocodeUpdatedTotalRef.current;
-          setGeoUI(
-            total > 0 ? { state: "done", updatedTotal: total } : { state: "stopped", updatedTotal: total }
-          );
+          setGeoUI(total > 0 ? { state: "done", updatedTotal: total } : { state: "stopped", updatedTotal: total });
           break;
         }
 
@@ -339,13 +321,11 @@ export default function DriverModePage() {
     } catch (e: any) {
       setGeoUI({ state: "error", message: e?.message ?? "Errore geocode" });
     } finally {
-      // se abbiamo ancora missing, permettiamo retry manuale (non auto-riparte da solo)
       geocodeStartedRef.current = false;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeId, orderedStops]);
 
-  // auto-start una volta quando vede missing coords
   useEffect(() => {
     if (missingCoordsCount <= 0) return;
     if (geoUI.state !== "idle") return;
@@ -396,9 +376,7 @@ export default function DriverModePage() {
     }
 
     if (nextValue) {
-      const pending = orderedStops.find(
-        (s) => s.stop_type === "delivery" && !s.is_done && s.id !== stopId
-      );
+      const pending = orderedStops.find((s) => s.stop_type === "delivery" && !s.is_done && s.id !== stopId);
       if (pending) setActiveStopId(pending.id);
     }
   }
@@ -448,15 +426,9 @@ export default function DriverModePage() {
 
     const required = (totalDeliveries / availableMinutes) * 60;
     return Number(required.toFixed(1));
-  }, [
-    startedAt,
-    workday.target_end_time,
-    workday.break_minutes,
-    workday.discontinuity_minutes,
-    totalDeliveries,
-  ]);
+  }, [startedAt, workday.target_end_time, workday.break_minutes, workday.discontinuity_minutes, totalDeliveries]);
 
-  // ===== Banner rientro (mantengo il tuo impianto base)
+  // ===== Banner rientro
   const canShowTimeWarning = tier === "pro" || tier === "elite";
 
   const targetEndMin = parseTimeToMinutes(workday.target_end_time);
@@ -476,8 +448,7 @@ export default function DriverModePage() {
 
   const pickupPoint = useMemo(() => {
     if (!pickupStop) return null;
-    if (pickupStop.lat != null && pickupStop.lng != null)
-      return { lat: pickupStop.lat, lng: pickupStop.lng };
+    if (pickupStop.lat != null && pickupStop.lng != null) return { lat: pickupStop.lat, lng: pickupStop.lng };
     return { address: pickupStop.address };
   }, [pickupStop]);
 
@@ -550,8 +521,7 @@ export default function DriverModePage() {
 
     const finishClockMin = finishEstimate.finishAt.getHours() * 60 + finishEstimate.finishAt.getMinutes();
 
-    const status: WarnStatus =
-      finishClockMin <= targetEndMin ? "ok" : finishClockMin <= maxEndMin ? "warn" : "late";
+    const status: WarnStatus = finishClockMin <= targetEndMin ? "ok" : finishClockMin <= maxEndMin ? "warn" : "late";
 
     const minutesUntilTarget = targetEndMin - nowMinFromMidnight;
     const availableForStops = minutesUntilTarget - (returnEtaMin ?? 0);
@@ -587,161 +557,166 @@ export default function DriverModePage() {
     }
   }, [warning]);
 
+  // ===== Helper testo mini-UX geo (compatta) =====
+  const geoLine = useMemo(() => {
+    if (!(missingCoordsCount > 0 || geoUI.state !== "idle")) return null;
+
+    if (geoUI.state === "running") return <>Geo: <b>batch {geoUI.round}/{geoUI.max}</b>…</>;
+    if (geoUI.state === "done") return <>Geo: <b>ok</b> (+{geoUI.updatedTotal})</>;
+    if (geoUI.state === "stopped") return <>Geo: <b>stop</b> (0)</>;
+    if (geoUI.state === "error")
+      return (
+        <>
+          Geo: <b className="text-red-600">errore</b> ({geoUI.message})
+          {geoUI.traceId && <span className="ml-1 text-[10px] text-neutral-400">• ref {geoUI.traceId}</span>}
+        </>
+      );
+    if (geoUI.state === "idle" && missingCoordsCount > 0) return <>Geo: <b>in attesa</b> ({missingCoordsCount})</>;
+    return null;
+  }, [geoUI, missingCoordsCount]);
+
   if (loading) return <div className="p-4 text-sm text-neutral-600">Caricamento Driver Mode…</div>;
 
   return (
     <main className="min-h-dvh bg-neutral-50 p-3 pb-28">
       <div className="mx-auto flex max-w-md flex-col gap-3">
-        {/* STICKY HEADER */}
-        <div className="sticky top-2 z-10 rounded-2xl border bg-white p-3 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <div className="text-xs text-neutral-500">RoutePro • Driver Mode</div>
+        {/* HEADER STICKY - COMPATTO + CONTROLLI COLLASSABILI */}
+        <div className="sticky top-2 z-10 rounded-2xl border bg-white p-2 shadow-sm">
+          {/* RIGA 1: info + azioni (sempre visibile) */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[11px] text-neutral-500">RoutePro • Driver</div>
 
-              {activeStop && (
-                <div className="mt-1 text-xs text-neutral-700">
-                  Corrente: <b>OPT #{activeStop.optimized_position ?? "—"}</b>{" "}
-                  (AF #{activeStop.af_stop_number ?? activeStop.position}) • {activeStop.stop_type}
-                </div>
-              )}
-
-              <div className="mt-1 text-[11px] text-neutral-500">
-                Consegne: <b>{deliveriesDone}/{totalDeliveries}</b>
-                {pace?.stopsPerHour != null && (
+              <div className="mt-0.5 truncate text-xs text-neutral-800">
+                {activeStop ? (
                   <>
-                    {" "}
-                    • ritmo: <b>{pace.stopsPerHour}</b> stop/ora
+                    <b>OPT #{activeStop.optimized_position ?? "—"}</b>{" "}
+                    <span className="text-neutral-500">(AF #{activeStop.af_stop_number ?? activeStop.position})</span>{" "}
+                    • <span className="capitalize">{activeStop.stop_type}</span>
                   </>
+                ) : (
+                  <>Seleziona uno stop…</>
                 )}
               </div>
 
-              {/* MINI-UX GEO (pulita) */}
-              {(missingCoordsCount > 0 || geoUI.state !== "idle") && (
-                <div className="mt-1 text-[11px] text-neutral-500">
-                  {geoUI.state === "running" && (
-                    <>
-                      Geocoding: <b>batch {geoUI.round}/{geoUI.max}</b>…
-                    </>
-                  )}
-                  {geoUI.state === "done" && (
-                    <>
-                      Geocoding: <b>completato</b> (+{geoUI.updatedTotal})
-                    </>
-                  )}
-                  {geoUI.state === "stopped" && (
-                    <>
-                      Geocoding: <b>stop</b> (0 aggiornati)
-                    </>
-                  )}
-                  {geoUI.state === "error" && (
-                    <>
-                      Geocoding: <b className="text-red-600">errore</b> ({geoUI.message})
-                      {geoUI.traceId && (
-                        <span className="ml-1 text-[10px] text-neutral-400">• ref {geoUI.traceId}</span>
-                      )}
-                    </>
-                  )}
-                  {geoUI.state === "idle" && missingCoordsCount > 0 && (
-                    <>
-                      Geocoding: <b>in attesa</b> ({missingCoordsCount} senza coord)
-                    </>
-                  )}
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-neutral-500">
+                <span>
+                  Consegne: <b>{deliveriesDone}/{totalDeliveries}</b>
+                </span>
+                {pace?.stopsPerHour != null && (
+                  <span>
+                    ritmo: <b>{pace.stopsPerHour}</b>/h
+                  </span>
+                )}
+                {geoLine && <span className="truncate">{geoLine}</span>}
+              </div>
+            </div>
+
+            <div className="flex shrink-0 flex-col gap-2">
+              <div className="flex gap-2">
+                <Link href={`/routepro/routes/${routeId}`}>
+                  <Button variant="outline" size="sm" type="button">
+                    Dettaglio
+                  </Button>
+                </Link>
+                <Button variant="outline" size="sm" onClick={onResetTimer} type="button">
+                  Reset
+                </Button>
+                <LogoutButton />
+              </div>
+
+              {/* Toggle controlli */}
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                onClick={() => setControlsOpen((v) => !v)}
+                type="button"
+              >
+                {controlsOpen ? "Chiudi controlli" : "Apri controlli"}
+              </Button>
+            </div>
+          </div>
+
+          {/* RIGA 2: controlli (collassabili) */}
+          {controlsOpen && (
+            <div className="mt-2 grid gap-2">
+              {requiredStopsPerHourAtStart !== null && (
+                <div className="rounded-xl border bg-blue-50 px-3 py-2 text-sm text-blue-900">
+                  Media richiesta: <b>{requiredStopsPerHourAtStart}</b> stop/ora
                 </div>
               )}
-            </div>
 
-            <div className="flex gap-2">
-              <Link href={`/routepro/routes/${routeId}`}>
-                <Button variant="outline" type="button">
-                  Dettaglio
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={navToActive} disabled={!activeStop} type="button">
+                  Naviga corrente
                 </Button>
-              </Link>
-              <Button variant="outline" onClick={onResetTimer} type="button">
-                Reset tempo
-              </Button>
-              <LogoutButton />
-            </div>
-          </div>
+                <Button variant="outline" onClick={goToNextPending} type="button">
+                  Prossimo (seleziona)
+                </Button>
+              </div>
 
-          {requiredStopsPerHourAtStart !== null && (
-            <div className="mt-2 rounded-xl border bg-blue-50 px-3 py-2 text-sm text-blue-900">
-              Per rientrare in orario dovrai tenere una media di <b>{requiredStopsPerHourAtStart}</b> stop/ora.
+              <Button onClick={navToNextPending} disabled={!nextPendingDelivery} type="button">
+                Naviga prossimo non fatto
+              </Button>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant={navApp === "google" ? "secondary" : "outline"}
+                  onClick={() => onSetNav("google")}
+                  type="button"
+                >
+                  Google
+                </Button>
+                <Button
+                  variant={navApp === "waze" ? "secondary" : "outline"}
+                  onClick={() => onSetNav("waze")}
+                  type="button"
+                >
+                  Waze
+                </Button>
+              </div>
+
+              <div className="rounded-2xl border bg-neutral-50 p-2">
+                <div className="mb-2 text-xs font-medium text-neutral-700">Vista</div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant={view === "list" ? "secondary" : "outline"}
+                    className="flex-1"
+                    onClick={() => setView("list")}
+                  >
+                    Lista
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={view === "map" ? "secondary" : "outline"}
+                    className="flex-1"
+                    onClick={() => setView("map")}
+                  >
+                    Mappa
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="secondary" className="w-full" onClick={load} type="button">
+                  Aggiorna
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={onRetryGeocode}
+                  disabled={missingCoordsCount <= 0 || geoUI.state === "running"}
+                  type="button"
+                  title={missingCoordsCount > 0 ? "Riprova geocodifica" : "Tutti gli stop hanno coordinate"}
+                >
+                  Riprova geocode
+                </Button>
+              </div>
             </div>
           )}
-
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <Button onClick={navToActive} disabled={!activeStop} type="button">
-              Naviga corrente
-            </Button>
-            <Button variant="outline" onClick={goToNextPending} type="button">
-              Prossimo (seleziona)
-            </Button>
-          </div>
-
-          <div className="mt-2">
-            <Button onClick={navToNextPending} disabled={!nextPendingDelivery} type="button">
-              Naviga prossimo non fatto
-            </Button>
-          </div>
-
-          <div className="mt-2 flex gap-2">
-            <Button
-              variant={navApp === "google" ? "secondary" : "outline"}
-              className="flex-1"
-              onClick={() => onSetNav("google")}
-              type="button"
-            >
-              Google
-            </Button>
-            <Button
-              variant={navApp === "waze" ? "secondary" : "outline"}
-              className="flex-1"
-              onClick={() => onSetNav("waze")}
-              type="button"
-            >
-              Waze
-            </Button>
-          </div>
-
-          <div className="mt-2 rounded-2xl border bg-neutral-50 p-2">
-            <div className="mb-2 text-xs font-medium text-neutral-700">Vista (Lista / Mappa)</div>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant={view === "list" ? "secondary" : "outline"}
-                className="flex-1"
-                onClick={() => setView("list")}
-              >
-                Lista
-              </Button>
-              <Button
-                type="button"
-                variant={view === "map" ? "secondary" : "outline"}
-                className="flex-1"
-                onClick={() => setView("map")}
-              >
-                Mappa
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            <Button variant="secondary" className="w-full" onClick={load} type="button">
-              Aggiorna
-            </Button>
-
-            {/* Bottone retry geocode (solo se serve) */}
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={onRetryGeocode}
-              disabled={missingCoordsCount <= 0 || geoUI.state === "running"}
-              type="button"
-              title={missingCoordsCount > 0 ? "Riprova geocodifica" : "Tutti gli stop hanno coordinate"}
-            >
-              Riprova geocode
-            </Button>
-          </div>
         </div>
 
         {/* BODY */}
@@ -751,7 +726,8 @@ export default function DriverModePage() {
               stops={mapStops}
               onSelectStop={(id) => {
                 setActiveStopId(id);
-                setView("list"); // ✅ come Flex: marker -> lista -> scroll
+                setView("list"); // marker -> lista -> scroll
+                setControlsOpen(false); // richiudi per vedere subito gli stop
               }}
             />
           ) : (
@@ -772,7 +748,6 @@ export default function DriverModePage() {
           orderedStops.map((s, idx) => (
             <StopCard
               key={s.id}
-              // ✅ FIX TS: MUST RETURN void
               ref={(el) => {
                 cardRefs.current[s.id] = el;
               }}
@@ -803,11 +778,7 @@ export default function DriverModePage() {
 
                   {etaLoading && <div className="mt-1 text-sm text-neutral-600">Calcolo ETA rientro...</div>}
 
-                  {etaError && (
-                    <div className="mt-1 text-sm text-red-600">
-                      ETA non disponibile: {etaError}
-                    </div>
-                  )}
+                  {etaError && <div className="mt-1 text-sm text-red-600">ETA non disponibile: {etaError}</div>}
 
                   {!etaLoading && !etaError && (
                     <>
