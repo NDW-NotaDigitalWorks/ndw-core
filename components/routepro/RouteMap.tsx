@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import type { Map as LeafletMap } from "leaflet";
+import type { Map as LeafletMap, DivIcon } from "leaflet";
 
 type MapStop = {
   id: string;
-  af: number; // numero Amazon Flex (o fallback)
-  opt: number; // numero ottimizzato
+  af: number;
+  opt: number;
   address: string;
   lat: number;
   lng: number;
@@ -23,22 +23,76 @@ type Props = {
 // React-Leaflet dynamic (evita SSR issues)
 const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
 const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
+const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
 const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), { ssr: false });
-const CircleMarker = dynamic(() => import("react-leaflet").then((m) => m.CircleMarker), { ssr: false });
-const Tooltip = dynamic(() => import("react-leaflet").then((m) => m.Tooltip), { ssr: false });
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+function asLatLngs(stops: MapStop[]) {
+  return stops.map((s) => [s.lat, s.lng] as [number, number]);
+}
+
+// Piccole icone HTML (stile “pallino”)
+// Usiamo divIcon (leaflet) solo a runtime, quindi lo carichiamo con require dentro useMemo.
+function buildDotIcon(kind: "pickup" | "return" | "delivery", label: string, active: boolean, done: boolean): DivIcon | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const L = require("leaflet");
+
+    const base =
+      kind === "pickup" ? "📦" : kind === "return" ? "↩️" : label;
+
+    const ring = active ? "ring-2 ring-black" : "ring-1 ring-neutral-300";
+    const bg =
+      kind === "pickup"
+        ? "bg-white"
+        : kind === "return"
+        ? "bg-white"
+        : done
+        ? "bg-white"
+        : "bg-white";
+
+    const fg =
+      kind === "delivery"
+        ? done
+          ? "text-neutral-700"
+          : "text-black"
+        : "text-black";
+
+    const html = `
+      <div class="ndw-dot ${ring} ${bg} ${fg}">
+        ${base}
+      </div>
+    `;
+
+    return L.divIcon({
+      className: "ndw-dot-wrap",
+      html,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -12],
+    });
+  } catch {
+    return null;
+  }
 }
 
 export function RouteMap({ stops, onSelectStop }: Props) {
   const mapRef = useRef<LeafletMap | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const pointsAll = useMemo(
-    () => stops.map((s) => [s.lat, s.lng] as [number, number]),
-    [stops]
-  );
+  // Guess tipo stop dalla stringa (per non toccare DB)
+  const getKind = (address: string): "pickup" | "return" | "delivery" => {
+    const a = address.trim();
+    if (a.startsWith("📦")) return "pickup";
+    if (a.startsWith("↩️")) return "return";
+    return "delivery";
+  };
+
+  const pointsAll = useMemo(() => asLatLngs(stops), [stops]);
 
   const nextStop = useMemo(() => stops.find((s) => !s.isDone) ?? null, [stops]);
 
@@ -46,35 +100,22 @@ export function RouteMap({ stops, onSelectStop }: Props) {
     if (!nextStop) return [];
     const idx = stops.findIndex((s) => s.id === nextStop.id);
     if (idx < 0) return [];
-    return stops.slice(idx).map((s) => [s.lat, s.lng] as [number, number]);
+    return asLatLngs(stops.slice(idx));
   }, [stops, nextStop]);
 
   const done = useMemo(() => stops.filter((s) => s.isDone).length, [stops]);
   const total = stops.length;
   const remaining = total - done;
 
-  // fit bounds quando cambia la lista
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    if (pointsAll.length < 2) {
-      if (pointsAll.length === 1) map.setView(pointsAll[0], 14);
-      return;
-    }
-
-    const L = require("leaflet");
-    const bounds = L.latLngBounds(pointsAll);
-    map.fitBounds(bounds, { padding: [24, 24] });
-  }, [pointsAll.length]);
-
-  // invalidateSize quando toggli fullscreen
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    const t = setTimeout(() => map.invalidateSize(), 80);
-    return () => clearTimeout(t);
-  }, [isFullscreen]);
+  // Icone memoizzate (1 per marker)
+  const markerIcons = useMemo(() => {
+    return stops.map((s) => {
+      const kind = getKind(s.address);
+      const label = String(s.opt);
+      return buildDotIcon(kind, label, s.isActive, s.isDone);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stops.map((s) => `${s.id}:${s.isActive}:${s.isDone}:${s.opt}:${s.address}`).join("|")]);
 
   function centerOnNext() {
     if (!nextStop) return;
@@ -93,6 +134,17 @@ export function RouteMap({ stops, onSelectStop }: Props) {
       }
       style={isFullscreen ? undefined : { height: 520 }}
     >
+      {/* CSS locale per pallini */}
+      <style>{`
+        .ndw-dot-wrap { background: transparent !important; border: none !important; }
+        .ndw-dot{
+          width:28px;height:28px;border-radius:9999px;
+          display:flex;align-items:center;justify-content:center;
+          font-size:12px;font-weight:700;
+          box-shadow: 0 1px 4px rgba(0,0,0,.15);
+        }
+      `}</style>
+
       {/* TOP OVERLAY */}
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500] p-3">
         <div className="pointer-events-auto flex items-center justify-between gap-2">
@@ -112,7 +164,7 @@ export function RouteMap({ stops, onSelectStop }: Props) {
             <button
               type="button"
               onClick={centerOnNext}
-              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm disabled:opacity-50"
+              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
               disabled={!nextStop}
             >
               Prossimo
@@ -129,65 +181,97 @@ export function RouteMap({ stops, onSelectStop }: Props) {
         </div>
       </div>
 
-      <MapContainer center={pointsAll[0] ?? [45.5, 9.2]} zoom={12} style={{ height: "100%", width: "100%" }}>
-        <MapRefBinder mapRef={mapRef} />
+      <MapContainer
+        center={pointsAll[0] ?? [45.5, 9.2]}
+        zoom={12}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <MapBinder
+          mapRef={mapRef}
+          isFullscreen={isFullscreen}
+          pointsAll={pointsAll}
+        />
 
-        <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer
+          attribution="&copy; OpenStreetMap contributors"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
 
-        {/* Polyline “totale” (sottile tratteggiata) */}
+        {/* Polyline “tutto” (sottile) */}
         {pointsAll.length >= 2 && (
-          <Polyline
-            positions={pointsAll}
-            pathOptions={{ weight: 3, dashArray: "6 8", opacity: 0.45 }}
-          />
+          <Polyline positions={pointsAll} pathOptions={{ weight: 3, opacity: 0.35 }} />
         )}
 
         {/* Polyline “rimanente” (più evidente) */}
         {pointsRemaining.length >= 2 && (
-          <Polyline
-            positions={pointsRemaining}
-            pathOptions={{ weight: 6, opacity: 0.9 }}
-          />
+          <Polyline positions={pointsRemaining} pathOptions={{ weight: 5, opacity: 0.8 }} />
         )}
 
-        {/* Pallini numerati (no marker Leaflet, quindi niente “Mark”) */}
-        {stops.map((s) => {
-          const isNext = nextStop?.id === s.id;
-          const radius = s.isActive ? 10 : isNext ? 9 : 7;
-
-          return (
-            <CircleMarker
-              key={s.id}
-              center={[s.lat, s.lng]}
-              radius={radius}
-              pathOptions={{
-                weight: s.isActive ? 3 : 2,
-                opacity: s.isDone ? 0.5 : 0.95,
-                fillOpacity: s.isDone ? 0.25 : 0.8,
-              }}
-              eventHandlers={{
-                click: () => onSelectStop?.(s.id),
-              }}
-            >
-              <Tooltip direction="center" permanent opacity={1}>
-                <div className="text-[11px] font-semibold">{s.opt}</div>
-              </Tooltip>
-            </CircleMarker>
-          );
-        })}
+        {stops.map((s, i) => (
+          <Marker
+            key={s.id}
+            position={[s.lat, s.lng]}
+            // se icon null, leaflet mette default, ma ormai “Mark” lo riduci molto
+            icon={markerIcons[i] ?? undefined}
+            eventHandlers={{
+              click: () => onSelectStop?.(s.id),
+            }}
+          >
+            <Popup>
+              <div className="text-sm font-semibold">
+                OPT #{s.opt} • AF #{s.af}
+              </div>
+              <div className="text-xs text-neutral-700">{s.address}</div>
+              <div className="mt-1 text-xs">{s.isDone ? "✅ Fatto" : "⏳ Da fare"}</div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
     </div>
   );
 }
 
-// helper per ottenere la map instance in modo stabile
-function MapRefBinder({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | null> }) {
+function MapBinder({
+  mapRef,
+  isFullscreen,
+  pointsAll,
+}: {
+  mapRef: React.MutableRefObject<LeafletMap | null>;
+  isFullscreen: boolean;
+  pointsAll: Array<[number, number]>;
+}) {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   const useMap = require("react-leaflet").useMap as () => LeafletMap;
   const map = useMap();
 
   useEffect(() => {
     mapRef.current = map;
+    (window as any).__reactLeaflet_map = map;
   }, [map, mapRef]);
+
+  // fit bounds quando cambiano i punti
+  useEffect(() => {
+    if (!map) return;
+    if (pointsAll.length < 2) {
+      if (pointsAll.length === 1) map.setView(pointsAll[0], 14);
+      return;
+    }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const L = require("leaflet");
+      const bounds = L.latLngBounds(pointsAll);
+      map.fitBounds(bounds, { padding: [24, 24] });
+    } catch {
+      // no-op
+    }
+  }, [map, pointsAll]);
+
+  // invalidateSize quando toggli fullscreen
+  useEffect(() => {
+    if (!map) return;
+    const t = setTimeout(() => map.invalidateSize(), 80);
+    return () => clearTimeout(t);
+  }, [map, isFullscreen]);
 
   return null;
 }
