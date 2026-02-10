@@ -14,11 +14,11 @@ function mustOrsFallback(): string {
   return key;
 }
 
-async function getUserOrsKeyFromToken(token: string | null): Promise<{ userId: string | null; key: string | null }> {
-  if (!token) return { userId: null, key: null };
+async function getUserOrsKeyFromToken(token: string | null): Promise<string | null> {
+  if (!token) return null;
 
   const { data, error } = await supabaseAdmin.auth.getUser(token);
-  if (error || !data.user) return { userId: null, key: null };
+  if (error || !data.user) return null;
 
   const { data: row } = await supabaseAdmin
     .from("routepro_settings")
@@ -27,10 +27,10 @@ async function getUserOrsKeyFromToken(token: string | null): Promise<{ userId: s
     .maybeSingle();
 
   const k = row?.ors_api_key?.trim();
-  return { userId: data.user.id, key: k ? k : null };
+  return k ? k : null;
 }
 
-async function orsGeocode(apiKey: string, address: string) {
+async function orsGeocodeSoft(apiKey: string, address: string): Promise<{ lng: number; lat: number } | null> {
   const url = new URL(`${ORS_BASE}/geocode/search`);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("text", address);
@@ -39,7 +39,7 @@ async function orsGeocode(apiKey: string, address: string) {
   const res = await fetch(url.toString(), { method: "GET" });
   if (!res.ok) return null;
 
-  const data = await res.json().catch(() => null) as any;
+  const data = (await res.json().catch(() => null)) as any;
   const coords = data?.features?.[0]?.geometry?.coordinates; // [lng, lat]
   if (!coords || coords.length < 2) return null;
 
@@ -63,7 +63,7 @@ async function orsDirectionsMinutes(
     throw new Error(`ORS directions failed: ${res.status} ${txt}`);
   }
 
-  const data = await res.json().catch(() => null) as any;
+  const data = (await res.json().catch(() => null)) as any;
   const seconds = data?.features?.[0]?.properties?.summary?.duration;
   if (typeof seconds !== "number") throw new Error("Missing duration from ORS directions response.");
   return Math.round(seconds / 60);
@@ -82,14 +82,14 @@ export async function POST(req: NextRequest) {
 
     if (!from || !to) return NextResponse.json({ error: "Missing from/to", traceId }, { status: 400 });
 
-    const { key: userKey } = await getUserOrsKeyFromToken(token);
+    const userKey = await getUserOrsKeyFromToken(token);
     const apiKey = userKey ?? mustOrsFallback();
 
     async function resolvePoint(p: any): Promise<{ lat: number; lng: number }> {
       if (typeof p?.lat === "number" && typeof p?.lng === "number") return { lat: p.lat, lng: p.lng };
 
       if (typeof p?.address === "string" && p.address.trim()) {
-        const geo = await orsGeocode(apiKey, p.address);
+        const geo = await orsGeocodeSoft(apiKey, p.address);
         if (!geo) throw new Error(`Geocoding failed: ${p.address}`);
         return { lat: geo.lat, lng: geo.lng };
       }
@@ -108,9 +108,6 @@ export async function POST(req: NextRequest) {
       traceId,
     });
   } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message ?? "Error", traceId },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message ?? "Error", traceId }, { status: 500 });
   }
 }
