@@ -1,3 +1,4 @@
+// app/routepro/import/text/analyze/page.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -28,7 +29,6 @@ export default function ImportTextAnalyzePage() {
     setLoading(true);
 
     try {
-      // ✅ assicurati che l’utente sia loggato
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token || null;
 
@@ -46,26 +46,18 @@ export default function ImportTextAnalyzePage() {
         body: JSON.stringify({ rawText: text }),
       });
 
-      const raw = await res.text();
-      let data: any = {};
-      try {
-        data = raw ? JSON.parse(raw) : {};
-      } catch {
-        data = {};
-      }
+      const data = await res.json().catch(() => ({} as any));
 
       if (!res.ok) {
         const msg =
           data?.error
-            ? `API ${res.status}: ${data.error}`
-            : `API ${res.status}: ${raw || "Risposta vuota"}`;
+            ? `${data.error}${data.detail ? ` — ${data.detail}` : ""}${data.traceId ? ` (trace: ${data.traceId})` : ""}`
+            : `Errore API (${res.status})`;
         throw new Error(msg);
       }
 
       const routeId = data?.routeId as string | undefined;
-      if (!routeId) {
-        throw new Error(`routeId mancante. Risposta: ${raw || "vuota"}`);
-      }
+      if (!routeId) throw new Error(`routeId mancante nella risposta API${data?.traceId ? ` (trace: ${data.traceId})` : ""}`);
 
       router.push(routeProPath(`/routes/${routeId}/driver`));
     } catch (e: any) {
@@ -78,7 +70,6 @@ export default function ImportTextAnalyzePage() {
   return (
     <main className="min-h-dvh bg-neutral-50 p-3">
       <div className="mx-auto max-w-md space-y-3">
-        {/* TOP BAR */}
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold">RoutePro • Import</div>
           <LogoutButton />
