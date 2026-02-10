@@ -4,12 +4,41 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
+const ORS_BASE = "https://api.openrouteservice.org";
+
 function makeTraceId() {
   return Math.random().toString(16).slice(2) + "-" + Date.now().toString(16);
 }
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function pickEnvOrsKey(): string | null {
+  const k = process.env.ORS_API_KEY?.trim();
+  return k ? k : null;
+}
+
+async function orsGeocode(apiKey: string, address: string): Promise<{ lat: number; lng: number } | null> {
+  const url = new URL(`${ORS_BASE}/geocode/search`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("text", address);
+  url.searchParams.set("size", "1");
+  url.searchParams.set("layers", "address,venue,locality,street"); // un po' più tollerante
+
+  const res = await fetch(url.toString(), { method: "GET" });
+  if (!res.ok) {
+    // Non buttiamo giù tutto: falliamo “soft”
+    return null;
+  }
+  const data = await res.json().catch(() => null) as any;
+  const coords = data?.features?.[0]?.geometry?.coordinates; // [lng, lat]
+  if (!coords || coords.length < 2) return null;
+
+  const lng = Number(coords[0]);
+  const lat = Number(coords[1]);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  return { lat, lng };
 }
 
 async function nominatimGeocode(q: string): Promise<{ lat: number; lng: number } | null> {
@@ -67,7 +96,10 @@ export async function POST(req: Request) {
     // valida utente dal token
     const { data: userRes, error: userErr } = await admin.auth.getUser(token);
     if (userErr || !userRes?.user) {
-      return NextResponse.json({ error: "Unauthorized", detail: userErr?.message, traceId }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized", detail: userErr?.message, traceId },
+        { status: 401 }
+      );
     }
     const userId = userRes.user.id;
 
@@ -84,6 +116,17 @@ export async function POST(req: Request) {
     if (routeRow.user_id !== userId) {
       return NextResponse.json({ error: "Forbidden", traceId }, { status: 403 });
     }
+
+    // resolve ORS key: user -> env
+    const { data: settingsRow } = await admin
+      .from("routepro_settings")
+      .select("ors_api_key")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    const userKey = settingsRow?.ors_api_key?.trim() || null;
+    const envKey = pickEnvOrsKey();
+    const canUseOrs = Boolean(userKey || envKey);
 
     // prendi stop senza coords (limite 25 per chiamata)
     const { data: stops, error: stopsErr } = await admin
@@ -102,42 +145,67 @@ export async function POST(req: Request) {
     }
 
     let updated = 0;
-    const failures: Array<{ id: string; address: string }> = [];
+    const failures: Array<{ id: string; address: string; reason: string }> = [];
+
+    // throttle:
+    // - ORS: più veloce (ma non sparare 10/sec per non rischiare 429)
+    // - Nominatim: 1 req/sec
+    const ORS_DELAY_MS = 350;
+    const NOMINATIM_DELAY_MS = 1100;
 
     for (const s of stops as any[]) {
       const addr = String(s.address || "").trim();
       if (!addr) {
-        failures.push({ id: s.id, address: "" });
+        failures.push({ id: s.id, address: "", reason: "empty_address" });
         continue;
       }
 
-      const result = await nominatimGeocode(addr);
-      if (!result) {
-        failures.push({ id: s.id, address: addr });
-        await sleep(1000);
+      let coords: { lat: number; lng: number } | null = null;
+
+      // 1) ORS user key
+      if (userKey) {
+        coords = await orsGeocode(userKey, addr);
+        await sleep(ORS_DELAY_MS);
+      }
+
+      // 2) ORS env key
+      if (!coords && envKey) {
+        coords = await orsGeocode(envKey, addr);
+        await sleep(ORS_DELAY_MS);
+      }
+
+      // 3) fallback Nominatim
+      if (!coords) {
+        coords = await nominatimGeocode(addr);
+        await sleep(NOMINATIM_DELAY_MS);
+      }
+
+      if (!coords) {
+        failures.push({ id: s.id, address: addr, reason: canUseOrs ? "no_match" : "no_key_and_no_match" });
         continue;
       }
 
       const { error: upErr } = await admin
         .from("route_stops")
-        .update({ lat: result.lat, lng: result.lng })
+        .update({ lat: coords.lat, lng: coords.lng })
         .eq("id", s.id);
 
       if (!upErr) updated++;
-      else failures.push({ id: s.id, address: addr });
-
-      // throttle 1 req/sec
-      await sleep(1000);
+      else failures.push({ id: s.id, address: addr, reason: "db_update_failed" });
     }
 
     return NextResponse.json({
       ok: true,
       updated,
       attempted: stops.length,
-      failures: failures.slice(0, 5),
+      keyMode: userKey ? "user" : envKey ? "ndw" : "none",
+      failures: failures.slice(0, 8),
       traceId,
     });
   } catch (e: any) {
-    return NextResponse.json({ error: "Geocode failed", detail: e?.message ?? e, traceId }, { status: 500 });
+    return NextResponse.json(
+      { error: "Geocode failed", detail: e?.message ?? String(e), traceId },
+      { status: 500 }
+    );
   }
 }
