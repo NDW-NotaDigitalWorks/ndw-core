@@ -4,7 +4,10 @@
 import { forwardRef } from "react";
 import { Button } from "@/components/ui/button";
 
+type StopType = "pickup" | "delivery" | "return";
+
 type Props = {
+  // sempre
   afNumber: number;
   optNumber: number;
   address: string;
@@ -12,14 +15,46 @@ type Props = {
   lng: number | null;
   isDone: boolean;
   isActive: boolean;
-  packages?: number | null; 
   onToggleDone: () => void;
+
+  // opzionali (per ripristinare UI “ricca”)
+  packages?: number | null;
+  stopType?: StopType | string | null;
+  timeWindow?: string | null;        // es. "08:30 - 17:30"
+  titleLine?: string | null;         // es. "Asem S.r.l." / nome destinatario
+  note?: string | null;              // note aggiuntive
+  showCoords?: boolean;              // default false (risparmia spazio)
 };
 
+function stopTypeLabel(t?: string | null): string | null {
+  if (!t) return null;
+  if (t === "pickup") return "Ritiro";
+  if (t === "delivery") return "Consegna";
+  if (t === "return") return "Rientro";
+  return t; // fallback se arriva altro
+}
+
 export const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
-  { afNumber, optNumber, address, lat, lng, isDone, isActive, packages = null, onToggleDone },
+  {
+    afNumber,
+    optNumber,
+    address,
+    lat,
+    lng,
+    isDone,
+    isActive,
+    packages = null,
+    stopType = null,
+    timeWindow = null,
+    titleLine = null,
+    note = null,
+    showCoords = false,
+    onToggleDone,
+  },
   ref
 ) {
+  const typeLabel = stopTypeLabel(stopType);
+
   return (
     <div
       ref={ref}
@@ -31,23 +66,53 @@ export const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-xs text-neutral-500">
-            AF <b>#{afNumber}</b> • OPT <b>#{optNumber}</b>
+          {/* Riga top: numeri + tipo + finestra */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-neutral-500">
+            <span>
+              AF <b>#{afNumber}</b> • OPT <b>#{optNumber}</b>
+            </span>
+
+            {typeLabel && (
+              <span className="rounded-full border bg-neutral-50 px-2 py-0.5 text-[11px] text-neutral-700">
+                {typeLabel}
+              </span>
+            )}
+
+            {timeWindow && (
+              <span className="text-[11px] text-neutral-500">
+                {timeWindow}
+              </span>
+            )}
           </div>
 
-          <div className="mt-1 text-sm font-medium text-neutral-900 break-words">
+          {/* Riga “titolo” (azienda/nome) */}
+          {titleLine && (
+            <div className="mt-1 text-sm font-semibold text-neutral-900 break-words">
+              {titleLine}
+            </div>
+          )}
+
+          {/* Indirizzo */}
+          <div className={[titleLine ? "mt-0.5" : "mt-1", "text-sm text-neutral-900 break-words"].join(" ")}>
             {address}
           </div>
 
-          {/* ✅ PACCHI */}
+          {/* Note */}
+          {note && (
+            <div className="mt-1 text-xs text-neutral-600 break-words">
+              {note}
+            </div>
+          )}
+
+          {/* Pacchi */}
           {packages != null && (
             <div className="mt-2 inline-flex items-center rounded-full border bg-neutral-50 px-2 py-1 text-xs text-neutral-700">
               📦 <b className="mx-1">{packages}</b> {packages === 1 ? "pacco" : "pacchi"}
             </div>
           )}
 
-          {/* coords (optional tiny hint) */}
-          {(lat != null && lng != null) && (
+          {/* coords (off di default: spazio) */}
+          {showCoords && lat != null && lng != null && (
             <div className="mt-1 text-[11px] text-neutral-400">
               {lat.toFixed(5)}, {lng.toFixed(5)}
             </div>
@@ -58,6 +123,7 @@ export const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
           variant={isDone ? "secondary" : "outline"}
           onClick={onToggleDone}
           className="shrink-0"
+          type="button"
         >
           {isDone ? "Fatto" : "Done"}
         </Button>
