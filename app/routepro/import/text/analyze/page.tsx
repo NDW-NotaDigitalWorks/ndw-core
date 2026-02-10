@@ -1,4 +1,3 @@
-// app/routepro/import/text/analyze/page.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -15,6 +14,9 @@ export default function ImportTextAnalyzePage() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // piccolo “marker” per capire al volo se stai vedendo questa versione
+  const UI_BUILD_MARK = "UI:v3-debug";
 
   const canSubmit = useMemo(() => text.trim().length >= 20, [text]);
 
@@ -46,18 +48,36 @@ export default function ImportTextAnalyzePage() {
         body: JSON.stringify({ rawText: text }),
       });
 
-      const data = await res.json().catch(() => ({} as any));
+      const rawText = await res.text();
+      let data: any = {};
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = { _raw: rawText };
+      }
 
       if (!res.ok) {
-        const msg =
-          data?.error
-            ? `${data.error}${data.detail ? ` — ${data.detail}` : ""}${data.traceId ? ` (trace: ${data.traceId})` : ""}`
-            : `Errore API (${res.status})`;
+        // 👇 QUI NON PUÒ ESSERE GENERICO: stampiamo tutto.
+        const msg = [
+          `${UI_BUILD_MARK}`,
+          `HTTP ${res.status} ${res.statusText}`,
+          data?.error ? `error: ${data.error}` : null,
+          data?.detail ? `detail: ${data.detail}` : null,
+          data?.traceId ? `traceId: ${data.traceId}` : null,
+          `body: ${JSON.stringify(data, null, 2)}`,
+        ]
+          .filter(Boolean)
+          .join("\n");
+
         throw new Error(msg);
       }
 
       const routeId = data?.routeId as string | undefined;
-      if (!routeId) throw new Error(`routeId mancante nella risposta API${data?.traceId ? ` (trace: ${data.traceId})` : ""}`);
+      if (!routeId) {
+        throw new Error(
+          `${UI_BUILD_MARK}\nRisposta OK ma routeId mancante.\nbody: ${JSON.stringify(data, null, 2)}`
+        );
+      }
 
       router.push(routeProPath(`/routes/${routeId}/driver`));
     } catch (e: any) {
@@ -70,6 +90,7 @@ export default function ImportTextAnalyzePage() {
   return (
     <main className="min-h-dvh bg-neutral-50 p-3">
       <div className="mx-auto max-w-md space-y-3">
+        {/* TOP BAR */}
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold">RoutePro • Import</div>
           <LogoutButton />
@@ -99,12 +120,7 @@ export default function ImportTextAnalyzePage() {
               {loading ? "Creo rotta..." : "✅ Crea rotta"}
             </Button>
 
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => router.push(routeProPath("/import/text"))}
-              type="button"
-            >
+            <Button variant="outline" className="w-full" onClick={() => router.push(routeProPath("/import/text"))} type="button">
               ← Indietro
             </Button>
           </CardContent>
