@@ -47,7 +47,7 @@ type GeoUI =
   | { state: "running"; round: number; max: number }
   | { state: "done"; updatedTotal: number }
   | { state: "stopped"; updatedTotal: number }
-  | { state: "error"; message: string };
+  | { state: "error"; message: string; traceId?: string };
 
 function storageKeyStart(routeId: string) {
   return `ndw_routepro_started_at_${routeId}`;
@@ -266,7 +266,7 @@ export default function DriverModePage() {
       }));
   }, [orderedStops, activeStopId]);
 
-  // ======== GEOCODE LOOP (con mini-UX) ========
+  // ======== GEOCODE LOOP (con mini-UX + traceId) ========
   const runGeocodeLoop = useCallback(async () => {
     if (geocodeStartedRef.current) return;
 
@@ -287,7 +287,7 @@ export default function DriverModePage() {
         return;
       }
 
-      const maxRounds = 8;  // 8 * 25 = 200 stop
+      const maxRounds = 8; // 8 * 25 = 200 stop
       const delayMs = 1200;
 
       geocodeUpdatedTotalRef.current = 0;
@@ -305,7 +305,12 @@ export default function DriverModePage() {
         });
 
         if (!res.ok) {
-          setGeoUI({ state: "error", message: `HTTP ${res.status}` });
+          const errData = await res.json().catch(() => null);
+          setGeoUI({
+            state: "error",
+            message: errData?.error ?? `HTTP ${res.status}`,
+            traceId: errData?.traceId,
+          });
           break;
         }
 
@@ -318,7 +323,9 @@ export default function DriverModePage() {
 
         if (updated <= 0) {
           const total = geocodeUpdatedTotalRef.current;
-          setGeoUI(total > 0 ? { state: "done", updatedTotal: total } : { state: "stopped", updatedTotal: total });
+          setGeoUI(
+            total > 0 ? { state: "done", updatedTotal: total } : { state: "stopped", updatedTotal: total }
+          );
           break;
         }
 
@@ -441,7 +448,13 @@ export default function DriverModePage() {
 
     const required = (totalDeliveries / availableMinutes) * 60;
     return Number(required.toFixed(1));
-  }, [startedAt, workday.target_end_time, workday.break_minutes, workday.discontinuity_minutes, totalDeliveries]);
+  }, [
+    startedAt,
+    workday.target_end_time,
+    workday.break_minutes,
+    workday.discontinuity_minutes,
+    totalDeliveries,
+  ]);
 
   // ===== Banner rientro (mantengo il tuo impianto base)
   const canShowTimeWarning = tier === "pro" || tier === "elite";
@@ -463,7 +476,8 @@ export default function DriverModePage() {
 
   const pickupPoint = useMemo(() => {
     if (!pickupStop) return null;
-    if (pickupStop.lat != null && pickupStop.lng != null) return { lat: pickupStop.lat, lng: pickupStop.lng };
+    if (pickupStop.lat != null && pickupStop.lng != null)
+      return { lat: pickupStop.lat, lng: pickupStop.lng };
     return { address: pickupStop.address };
   }, [pickupStop]);
 
@@ -593,26 +607,44 @@ export default function DriverModePage() {
 
               <div className="mt-1 text-[11px] text-neutral-500">
                 Consegne: <b>{deliveriesDone}/{totalDeliveries}</b>
-                {pace?.stopsPerHour != null && <> • ritmo: <b>{pace.stopsPerHour}</b> stop/ora</>}
+                {pace?.stopsPerHour != null && (
+                  <>
+                    {" "}
+                    • ritmo: <b>{pace.stopsPerHour}</b> stop/ora
+                  </>
+                )}
               </div>
 
               {/* MINI-UX GEO (pulita) */}
               {(missingCoordsCount > 0 || geoUI.state !== "idle") && (
                 <div className="mt-1 text-[11px] text-neutral-500">
                   {geoUI.state === "running" && (
-                    <>Geocoding: <b>batch {geoUI.round}/{geoUI.max}</b>…</>
+                    <>
+                      Geocoding: <b>batch {geoUI.round}/{geoUI.max}</b>…
+                    </>
                   )}
                   {geoUI.state === "done" && (
-                    <>Geocoding: <b>completato</b> (+{geoUI.updatedTotal})</>
+                    <>
+                      Geocoding: <b>completato</b> (+{geoUI.updatedTotal})
+                    </>
                   )}
                   {geoUI.state === "stopped" && (
-                    <>Geocoding: <b>stop</b> (0 aggiornati)</>
+                    <>
+                      Geocoding: <b>stop</b> (0 aggiornati)
+                    </>
                   )}
                   {geoUI.state === "error" && (
-                    <>Geocoding: <b className="text-red-600">errore</b> ({geoUI.message})</>
+                    <>
+                      Geocoding: <b className="text-red-600">errore</b> ({geoUI.message})
+                      {geoUI.traceId && (
+                        <span className="ml-1 text-[10px] text-neutral-400">• ref {geoUI.traceId}</span>
+                      )}
+                    </>
                   )}
                   {geoUI.state === "idle" && missingCoordsCount > 0 && (
-                    <>Geocoding: <b>in attesa</b> ({missingCoordsCount} senza coord)</>
+                    <>
+                      Geocoding: <b>in attesa</b> ({missingCoordsCount} senza coord)
+                    </>
                   )}
                 </div>
               )}
@@ -620,7 +652,9 @@ export default function DriverModePage() {
 
             <div className="flex gap-2">
               <Link href={`/routepro/routes/${routeId}`}>
-                <Button variant="outline" type="button">Dettaglio</Button>
+                <Button variant="outline" type="button">
+                  Dettaglio
+                </Button>
               </Link>
               <Button variant="outline" onClick={onResetTimer} type="button">
                 Reset tempo
@@ -636,8 +670,12 @@ export default function DriverModePage() {
           )}
 
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <Button onClick={navToActive} disabled={!activeStop} type="button">Naviga corrente</Button>
-            <Button variant="outline" onClick={goToNextPending} type="button">Prossimo (seleziona)</Button>
+            <Button onClick={navToActive} disabled={!activeStop} type="button">
+              Naviga corrente
+            </Button>
+            <Button variant="outline" onClick={goToNextPending} type="button">
+              Prossimo (seleziona)
+            </Button>
           </div>
 
           <div className="mt-2">
