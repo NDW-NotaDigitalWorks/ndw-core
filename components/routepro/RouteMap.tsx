@@ -1,16 +1,13 @@
-// components/routepro/RouteMap.tsx
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Tooltip, useMap } from "react-leaflet";
-import type { LatLngExpression } from "leaflet";
-import L from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import type { Map as LeafletMap } from "leaflet";
 
 type MapStop = {
   id: string;
-  af: number;
-  opt: number;
+  af: number;       // numero Amazon Flex (o fallback)
+  opt: number;      // numero ottimizzato
   address: string;
   lat: number;
   lng: number;
@@ -20,119 +17,185 @@ type MapStop = {
 
 type Props = {
   stops: MapStop[];
-  onSelectStop: (id: string) => void;
+  onSelectStop?: (id: string) => void;
 };
 
-// FIX icone default (Next/Vercel spesso rompe i path)
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
-});
+// React-Leaflet dynamic (evita SSR issues)
+const MapContainer = dynamic(() => import("react-leaflet").then(m => m.MapContainer), { ssr: false });
+const TileLayer = dynamic(() => import("react-leaflet").then(m => m.TileLayer), { ssr: false });
+const Marker = dynamic(() => import("react-leaflet").then(m => m.Marker), { ssr: false });
+const Popup = dynamic(() => import("react-leaflet").then(m => m.Popup), { ssr: false });
+const Polyline = dynamic(() => import("react-leaflet").then(m => m.Polyline), { ssr: false });
 
-// Marker numerato stile “Flex”
-function NumberedMarkerIcon(label: string, active: boolean) {
-  return L.divIcon({
-    className: "ndw-marker",
-    html: `
-      <div style="
-        width: 34px; height: 34px;
-        border-radius: 9999px;
-        border: 2px solid ${active ? "#111827" : "#0f172a"};
-        background: ${active ? "#111827" : "#ffffff"};
-        color: ${active ? "#ffffff" : "#111827"};
-        display:flex; align-items:center; justify-content:center;
-        font-weight: 700; font-size: 12px;
-        box-shadow: 0 6px 16px rgba(0,0,0,.15);
-      ">
-        ${label}
-      </div>
-    `,
-    iconSize: [34, 34],
-    iconAnchor: [17, 34],
-    popupAnchor: [0, -34],
-  });
-}
-
-// Componente helper: prende la map instance correttamente (senza whenReady(e))
-function MapAutoFit({ points }: { points: LatLngExpression[] }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!map) return;
-    if (!points.length) return;
-
-    if (points.length === 1) {
-      map.setView(points[0], 14, { animate: true });
-      return;
-    }
-
-    const bounds = L.latLngBounds(points as any);
-    map.fitBounds(bounds, { padding: [24, 24] });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [map, points.length]);
-
-  return null;
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
 }
 
 export function RouteMap({ stops, onSelectStop }: Props) {
-  const points = useMemo(
-    () => stops.map((s) => [s.lat, s.lng] as LatLngExpression),
+  const mapRef = useRef<LeafletMap | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // ordine già “giusto”: ci arriva da driver come mapStops derivato da orderedStops
+  const pointsAll = useMemo(
+    () => stops.map(s => [s.lat, s.lng] as [number, number]),
     [stops]
   );
 
-  if (!stops.length) {
-    return (
-      <div className="rounded-2xl border bg-white p-4 text-sm text-neutral-700">
-        Nessuno stop con coordinate da mostrare.
-      </div>
-    );
+  const nextStop = useMemo(() => {
+    // Priorità: delivery non fatto (ma qui non abbiamo stop_type; quindi: primo non fatto)
+    return stops.find(s => !s.isDone) ?? null;
+  }, [stops]);
+
+  const pointsRemaining = useMemo(() => {
+    if (!nextStop) return [];
+    const idx = stops.findIndex(s => s.id === nextStop.id);
+    if (idx < 0) return [];
+    return stops.slice(idx).map(s => [s.lat, s.lng] as [number, number]);
+  }, [stops, nextStop]);
+
+  const done = useMemo(() => stops.filter(s => s.isDone).length, [stops]);
+  const total = stops.length;
+  const remaining = total - done;
+
+  // fit bounds all’inizio e quando cambia la lista
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (pointsAll.length < 2) {
+      if (pointsAll.length === 1) map.setView(pointsAll[0], 14);
+      return;
+    }
+
+    // @ts-expect-error Leaflet exists at runtime
+    const L = require("leaflet");
+    const bounds = L.latLngBounds(pointsAll);
+    map.fitBounds(bounds, { padding: [24, 24] });
+  }, [pointsAll.length]);
+
+  // invalidateSize quando toggli fullscreen
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const t = setTimeout(() => map.invalidateSize(), 80);
+    return () => clearTimeout(t);
+  }, [isFullscreen]);
+
+  function centerOnNext() {
+    if (!nextStop) return;
+    const map = mapRef.current;
+    if (!map) return;
+    map.setView([nextStop.lat, nextStop.lng], clamp(map.getZoom(), 13, 17), { animate: true });
+    onSelectStop?.(nextStop.id);
   }
 
-  const center: LatLngExpression = points[0];
-
   return (
-    <div className="h-[70vh] overflow-hidden rounded-2xl border bg-white">
+    <div
+      className={
+        isFullscreen
+          ? "fixed inset-0 z-50 bg-white"
+          : "rounded-2xl border bg-white overflow-hidden"
+      }
+      style={isFullscreen ? undefined : { height: 520 }}
+    >
+      {/* TOP OVERLAY (Flex-like) */}
+      <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500] p-3">
+        <div className="pointer-events-auto flex items-center justify-between gap-2">
+          <div className="rounded-2xl border bg-white/95 px-3 py-2 shadow-sm">
+            <div className="text-xs text-neutral-500">Mappa</div>
+            <div className="text-sm font-semibold">
+              {done}/{total} fatte • {remaining} rimanenti
+            </div>
+            {nextStop && (
+              <div className="mt-1 text-[11px] text-neutral-600">
+                Prossimo: <b>OPT #{nextStop.opt}</b> (AF #{nextStop.af})
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={centerOnNext}
+              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
+              disabled={!nextStop}
+            >
+              Prossimo
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsFullscreen(v => !v)}
+              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
+            >
+              {isFullscreen ? "Esci" : "⛶ Guida"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* MAP */}
       <MapContainer
-        center={center}
+        center={pointsAll[0] ?? [45.5, 9.2]}
         zoom={12}
         style={{ height: "100%", width: "100%" }}
+        // ✅ FIX TypeScript: react-leaflet types a volte vogliono () => void
+        whenReady={() => {
+          // @ts-expect-error runtime ok
+          const map = (window as any).__reactLeaflet_map;
+          // fallback: recupero dalla ref interna via event non sempre tipizzato
+          // quindi settiamo ref in modo safe:
+          // NOTE: in molti setup mapRef viene settata via useMap(), qui facciamo più semplice sotto.
+        }}
       >
-        <MapAutoFit points={points} />
+        <MapRefBinder mapRef={mapRef} />
 
         <TileLayer
           attribution='&copy; OpenStreetMap contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {stops.map((s) => {
-          // Label: preferisci OPT, ma puoi scegliere AF se vuoi
-          const label = String(s.opt ?? s.af);
-          const icon = NumberedMarkerIcon(label, s.isActive);
+        {/* Polyline “tutto” */}
+        {pointsAll.length >= 2 && (
+          <Polyline positions={pointsAll} />
+        )}
 
-          return (
-            <Marker
-              key={s.id}
-              position={[s.lat, s.lng]}
-              icon={icon}
-              eventHandlers={{
-                click: () => onSelectStop(s.id),
-              }}
-            >
-              <Tooltip direction="top" offset={[0, -26]} opacity={1} permanent={false}>
-                <div className="text-xs">
-                  <div className="font-semibold">
-                    OPT #{s.opt} • AF #{s.af}
-                  </div>
-                  <div className="text-[11px] text-neutral-600">{s.address}</div>
-                </div>
-              </Tooltip>
-            </Marker>
-          );
-        })}
+        {/* Polyline “rimanente” (effetto progress) */}
+        {pointsRemaining.length >= 2 && (
+          <Polyline positions={pointsRemaining} />
+        )}
+
+        {stops.map((s) => (
+          <Marker
+            key={s.id}
+            position={[s.lat, s.lng]}
+            eventHandlers={{
+              click: () => onSelectStop?.(s.id),
+            }}
+          >
+            <Popup>
+              <div className="text-sm font-semibold">
+                OPT #{s.opt} • AF #{s.af}
+              </div>
+              <div className="text-xs text-neutral-700">{s.address}</div>
+              <div className="mt-1 text-xs">{s.isDone ? "✅ Fatto" : "⏳ Da fare"}</div>
+            </Popup>
+          </Marker>
+        ))}
       </MapContainer>
     </div>
   );
+}
+
+// helper per ottenere la map instance in modo stabile
+function MapRefBinder({ mapRef }: { mapRef: React.MutableRefObject<LeafletMap | null> }) {
+  const useMap = require("react-leaflet").useMap as () => LeafletMap;
+  const map = useMap();
+
+  useEffect(() => {
+    mapRef.current = map;
+    // esponi per debug se vuoi
+    (window as any).__reactLeaflet_map = map;
+  }, [map, mapRef]);
+
+  return null;
 }
