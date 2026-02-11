@@ -1,166 +1,137 @@
+export const dynamic = 'force-dynamic'; // Evita caching
 // app/api/webhooks/whop/route.ts
-import { NextRequest } from "next/server";
-import { whopsdk } from "@/lib/whop-sdk";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { NextResponse } from 'next/server';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { headers } from 'next/headers';
 
-type WhopWebhook = {
-  id: string;
-  api_version: "v1";
-  timestamp: string;
-  type: string;
-  data: any;
-  company_id?: string | null;
-};
+// Inizializza SDK Whop - RIUTILIZZO file esistente
+import { whop } from '@/lib/whop-sdk';
 
-function planIdToProductCode(planId?: string | null): string | null {
-  const starter = process.env.WHOP_PLAN_ROUTEPRO_STARTER;
-  const pro = process.env.WHOP_PLAN_ROUTEPRO_PRO;
-  const elite = process.env.WHOP_PLAN_ROUTEPRO_ELITE;
-
-  if (planId && starter && planId === starter) return "routepro_starter";
-  if (planId && pro && planId === pro) return "routepro_pro";
-  if (planId && elite && planId === elite) return "routepro_elite";
-
-  return null;
-}
-
-async function getUserIdByEmail(email: string): Promise<string | null> {
-  const normalized = email.toLowerCase().trim();
-
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("user_id")
-    .eq("email", normalized)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data?.user_id ?? null;
-}
-
-async function upsertEntitlement(params: {
-  userId: string;
-  productCode: string;
-  status: "active" | "inactive" | "cancelled";
-  externalCustomerId?: string | null;
-  externalSubscriptionId?: string | null;
-  endsAt?: string | null;
-}) {
-  const { error } = await supabaseAdmin.from("entitlements").upsert(
-    {
-      user_id: params.userId,
-      product_code: params.productCode,
-      status: params.status,
-      source: "whop",
-      external_customer_id: params.externalCustomerId ?? null,
-      external_subscription_id: params.externalSubscriptionId ?? null,
-      ends_at: params.endsAt ?? null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,product_code" }
-  );
-
-  if (error) throw error;
-}
-
-async function deactivateOtherRouteProPlans(userId: string, keepProductCode: string) {
-  const all = ["routepro_starter", "routepro_pro", "routepro_elite"];
-  const others = all.filter((c) => c !== keepProductCode);
-
-  const { error } = await supabaseAdmin
-    .from("entitlements")
-    .update({ status: "inactive", updated_at: new Date().toISOString() })
-    .eq("user_id", userId)
-    .in("product_code", others);
-
-  if (error) console.log("[WHOP] deactivateOtherRouteProPlans error:", error.message);
-}
-
-export async function POST(request: NextRequest): Promise<Response> {
+export async function POST(request: Request) {
   try {
-    const requestBodyText = await request.text();
-    const headers = Object.fromEntries(request.headers);
-
-    const webhookData = whopsdk.webhooks.unwrap(requestBodyText, { headers }) as WhopWebhook;
-
-    if (
-      webhookData.type !== "membership.activated" &&
-      webhookData.type !== "membership.deactivated" &&
-      webhookData.type !== "membership.cancel_at_period_end_changed"
-    ) {
-      return new Response("OK", { status: 200 });
+    const headersList = headers();
+    const signature = (await headersList).get('x-whop-webhook-signature');
+    export async function POST(request: Request) {
+  console.log('📥 Webhook ricevuto - INIZIO');
+  
+  try {
+    
+    // Verifica webhook secret
+    if (!signature || signature !== process.env.WHOP_WEBHOOK_SECRET) {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
-    const membership = webhookData.data;
+    const payload = await request.json();
+    const { type, data } = payload;
 
-    const email: string | undefined = membership?.user?.email;
-    const membershipId: string | undefined = membership?.id;
+    console.log('📦 Whop webhook received:', { type, data });
 
-    // Plan ID (different for starter/pro/elite)
-    const planId: string | undefined =
-      membership?.plan?.id ?? membership?.pricing?.id ?? membership?.plan_id;
+    // Inizializza Supabase admin client (bypassa RLS)
+    const supabase = createAdminClient();
 
-    const planTitle: string | undefined =
-      membership?.plan?.title ?? membership?.pricing?.title ?? membership?.plan?.name;
-
-    if (!email) return new Response("Missing user.email", { status: 200 });
-
-    const productCode = planIdToProductCode(planId ?? null);
-    if (!productCode) {
-      console.log("[WHOP] Unmapped plan:", planId, planTitle);
-      return new Response("OK", { status: 200 });
+    // Gestisci diversi tipi di eventi Whop
+    switch (type) {
+      case 'license.created':
+      case 'license.activated':
+        // Nuovo abbonamento o attivazione
+        await handleLicenseCreated(supabase, data);
+        break;
+      
+      case 'license.cancelled':
+      case 'license.expired':
+        // Abbonamento cancellato o scaduto → torna a FREE
+        await handleLicenseCancelled(supabase, data);
+        break;
+      
+      case 'license.updated':
+        // Cambio piano (es. STARTER → PRO)
+        await handleLicenseUpdated(supabase, data);
+        break;
+      
+      default:
+        console.log('⚠️ Unhandled webhook type:', type);
     }
 
-    const userId = await getUserIdByEmail(email);
-    if (!userId) {
-      console.log("[WHOP] No NDW user found for email:", email);
-      return new Response("OK", { status: 200 });
-    }
-
-    if (webhookData.type === "membership.activated") {
-      await upsertEntitlement({
-        userId,
-        productCode,
-        status: "active",
-        externalCustomerId: membership?.user?.id ?? null,
-        externalSubscriptionId: membershipId ?? null,
-        endsAt: membership?.renewal_period_end ?? null,
-      });
-
-      await deactivateOtherRouteProPlans(userId, productCode);
-
-      return new Response("OK", { status: 200 });
-    }
-
-    if (webhookData.type === "membership.deactivated") {
-      await upsertEntitlement({
-        userId,
-        productCode,
-        status: "inactive",
-        externalCustomerId: membership?.user?.id ?? null,
-        externalSubscriptionId: membershipId ?? null,
-        endsAt: membership?.renewal_period_end ?? null,
-      });
-      return new Response("OK", { status: 200 });
-    }
-
-    if (webhookData.type === "membership.cancel_at_period_end_changed") {
-      const cancelAtPeriodEnd = !!membership?.cancel_at_period_end;
-
-      await upsertEntitlement({
-        userId,
-        productCode,
-        status: "active",
-        externalCustomerId: membership?.user?.id ?? null,
-        externalSubscriptionId: membershipId ?? null,
-        endsAt: cancelAtPeriodEnd ? (membership?.renewal_period_end ?? null) : null,
-      });
-
-      return new Response("OK", { status: 200 });
-    }
-
-    return new Response("OK", { status: 200 });
-  } catch (e: any) {
-    console.error("[WHOP WEBHOOK ERROR]", e?.message ?? e);
-    return new Response("Bad Request", { status: 400 });
+    return NextResponse.json({ received: true });
+  } catch (error) {
+    console.error('❌ Webhook error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
+}
+
+// Funzioni helper
+async function handleLicenseCreated(supabase: any, data: any) {
+  const { user: whopUser, plan, id: licenseId } = data;
+  
+  // Mappa piano Whop al nostro tier
+  const tier = mapPlanToTier(plan.id);
+  
+  // Cerca utente via email
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('user_id')
+    .eq('email', whopUser.email)
+    .single();
+
+  if (profile) {
+    // Utente esistente → aggiorna tier
+    const { error } = await supabase
+      .from('profiles')
+      .update({ 
+        whop_tier: tier,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', profile.user_id);
+
+    if (error) console.error('Error updating tier:', error);
+    else console.log(`✅ Upgraded ${whopUser.email} to ${tier}`);
+  } else {
+    console.log('⚠️ User not found:', whopUser.email);
+    // Qui potresti creare un utente in attesa o loggare
+  }
+}
+
+async function handleLicenseCancelled(supabase: any, data: any) {
+  const { user: whopUser } = data;
+  
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      whop_tier: 'free',
+      updated_at: new Date().toISOString()
+    })
+    .eq('email', whopUser.email);
+
+  if (error) console.error('Error downgrading tier:', error);
+  else console.log(`⬇️ Downgraded ${whopUser.email} to free`);
+}
+
+async function handleLicenseUpdated(supabase: any, data: any) {
+  const { user: whopUser, plan } = data;
+  const tier = mapPlanToTier(plan.id);
+  
+  const { error } = await supabase
+    .from('profiles')
+    .update({ 
+      whop_tier: tier,
+      updated_at: new Date().toISOString()
+    })
+    .eq('email', whopUser.email);
+
+  if (error) console.error('Error updating tier:', error);
+  else console.log(`🔄 Updated ${whopUser.email} to ${tier}`);
+}
+
+// Mappa gli ID piano Whop ai nostri tier
+function mapPlanToTier(planId: string): string {
+  const planMap: Record<string, string> = {
+    [process.env.WHOP_PLAN_ROUTEPRO_STARTER || '']: 'starter',
+    [process.env.WHOP_PLAN_ROUTEPRO_PRO || '']: 'pro',
+    [process.env.WHOP_PLAN_ROUTEPRO_ELITE || '']: 'enterprise',
+  };
+  
+  return planMap[planId] || 'free';
 }

@@ -1,21 +1,38 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
+// middleware.ts - ✅ VERSIONE FINALE CORRETTA
+import { type NextRequest, NextResponse } from 'next/server';
+import { updateSession } from '@/lib/supabase/middleware';
 
-export function middleware(req: NextRequest) {
-  const host = req.headers.get("host") || "";
-  const url = req.nextUrl;
-
-  // Se arriva da routepro.notadigitalworks.com (o routepro.*)
-  if (host.startsWith("routepro.")) {
-    // Redirect canonico al path /routepro sul dominio principale
-    const target = new URL("https://notadigitalworks.com/routepro");
-    return NextResponse.redirect(target, 308);
+export async function middleware(request: NextRequest) {
+  // ⚠️ CRITICO: updateSession è l'UNICA fonte di verità per l'auth
+  // Tutto il resto lo facciamo DOPO che updateSession ha processato la request
+  const response = await updateSession(request);
+  
+  // Protezione rotte /routepro
+  if (request.nextUrl.pathname.startsWith('/routepro')) {
+    // ✅ METODO CORRETTO: verifichiamo se updateSession ha aggiunto cookie
+    // I cookie di sessione vengono settati nella response, non nella request!
+    
+    // Controlliamo se la response contiene cookie di sessione
+    const setCookieHeader = response.headers.get('set-cookie');
+    const hasSessionCookie = setCookieHeader?.includes('sb-') || false;
+    
+    // Inoltre, verifichiamo se l'utente è già autenticato guardando la request originale
+    // Questo è più affidabile
+    const { data: { user } } = await request.auth?.() || { data: { user: null } };
+    
+    if (!hasSessionCookie && !user) {
+      console.log('🔒 Nessuna sessione trovata, redirect a login');
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('redirect', request.nextUrl.pathname);
+      return NextResponse.redirect(loginUrl);
+    }
   }
 
-  return NextResponse.next();
+  return response;
 }
 
-// Evita di applicare il middleware a statici e API
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+  ],
 };

@@ -56,6 +56,16 @@ export default function ImportChoicePage() {
               ✍️ Inserimento manuale
             </Button>
 
+            {/* 🆕 NUOVO BOTTONE IMPORT CSV */}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => router.push(routeProPath("/import/csv"))}
+            >
+              📊 Importa da CSV (batch)
+            </Button>
+
             <div className="pt-2 text-[11px] text-neutral-500">
               Tip iPhone: puoi anche usare la{" "}
               <b>dettatura della tastiera</b> dentro il campo testo.
