@@ -6,8 +6,12 @@ function must(name: string, v?: string) {
   return v;
 }
 
-export const whopsdk = new Whop({
+// ? ESPORTAZIONE CORRETTA PER NEXT.JS 16.1.3
+export const whop = new Whop({
   apiKey: must("WHOP_API_KEY", process.env.WHOP_API_KEY),
   // Whop SDK expects base64 for webhookKey in standard webhooks verification.
   webhookKey: btoa(must("WHOP_WEBHOOK_SECRET", process.env.WHOP_WEBHOOK_SECRET)),
 });
+
+// ? ESPORTAZIONE RETROCOMPATIBILE (opzionale)
+export const whopsdk = whop;
