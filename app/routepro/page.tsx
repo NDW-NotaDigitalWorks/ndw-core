@@ -2,6 +2,9 @@
 // ✅ Supabase SSR integrato - Client corretto per Next.js 16+
 // ✅ Whop INTEGRAZIONE REALE - API endpoint attivi
 // ✅ UI premium con gestione errori e upgrade flow
+// 🔴 CORRETTO: Tier allineati con DB (routepro_starter, routepro_pro, routepro_elite)
+// 🔴 CORRETTO: API calls con metodo GET
+// 🔴 CORRETTO: Enterprise → Elite
 
 "use client";
 
@@ -33,7 +36,7 @@ import {
 } from "lucide-react";
 
 // =============================================
-// TYPES
+// TYPES - CORRETTI (allineati con DB)
 // =============================================
 type RouteRow = {
   id: string;
@@ -44,21 +47,21 @@ type RouteRow = {
   created_at: string;
 };
 
-// 🔴 MODIFICATO: Allineato con valori reali da Whop
-type UserTier = "free" | "starter" | "pro" | "enterprise";
+// 🔴 CORRETTO: Allineato con valori REALI del DB
+type UserTier = "free" | "routepro_starter" | "routepro_pro" | "routepro_elite";
 
 // =============================================
-// WHOP INTEGRATION - CHIAMATE API REALI
+// WHOP INTEGRATION - CHIAMATE API CORRETTE
 // =============================================
 
 /**
  * Verifica accesso Whop tramite API endpoint
- * 🔴 SOSTITUITO: Placeholder → Chiamata API reale
+ * 🔴 CORRETTO: GET invece di POST
  */
 async function checkWhopAccess(): Promise<boolean> {
   try {
     const response = await fetch('/api/check-whop-access', {
-      method: 'POST',
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
     
@@ -68,7 +71,7 @@ async function checkWhopAccess(): Promise<boolean> {
     }
     
     const data = await response.json();
-    return data.tier !== 'free'; // Accesso se non è free
+    return data.hasAccess;
   } catch (error) {
     console.error('Whop access check error:', error);
     return false;
@@ -77,7 +80,6 @@ async function checkWhopAccess(): Promise<boolean> {
 
 /**
  * Ottieni tier utente da API
- * 🔴 SOSTITUITO: Placeholder → Chiamata API reale
  */
 async function getUserTier(): Promise<UserTier> {
   try {
@@ -92,18 +94,18 @@ async function getUserTier(): Promise<UserTier> {
     return (data.tier || 'free') as UserTier;
   } catch (error) {
     console.error('Tier check error:', error);
-    return 'free'; // Fail safe: se errore, considera free
+    return 'free';
   }
 }
 
 /**
- * Sincronizza tier con Whop (chiamata all'avvio)
- * 🔴 AGGIUNTO: Verifica e aggiorna tier se necessario
+ * Sincronizza tier con Whop
+ * 🔴 CORRETTO: GET e hasAccess
  */
 async function syncTierWithWhop(): Promise<UserTier> {
   try {
     const response = await fetch('/api/check-whop-access', {
-      method: 'POST',
+      method: 'GET',
       headers: { 'Content-Type': 'application/json' },
     });
     
@@ -120,6 +122,19 @@ async function syncTierWithWhop(): Promise<UserTier> {
 // =============================================
 // UTILITIES
 // =============================================
+
+/**
+ * 🔴 NUOVA: Converte tier DB in nome display
+ */
+function getDisplayTier(tier: UserTier): string {
+  switch(tier) {
+    case 'routepro_starter': return 'Starter';
+    case 'routepro_pro': return 'Pro';
+    case 'routepro_elite': return 'Elite';
+    default: return 'Free';
+  }
+}
+
 function formatDate(dateString: string | null) {
   if (!dateString) return "—";
   try {
@@ -148,11 +163,11 @@ function formatCreatedAt(dateString: string) {
 }
 
 /**
- * 🔴 MODIFICATO: Limiti per tier reali
+ * 🔴 CORRETTO: Limiti per tier DB
  */
 function getTierLimits(tier: UserTier) {
   switch(tier) {
-    case 'starter':
+    case 'routepro_starter':
       return { 
         maxStops: 10, 
         advancedFeatures: false, 
@@ -160,7 +175,7 @@ function getTierLimits(tier: UserTier) {
         optimization: true,
         description: 'Piano Starter: fino a 10 stop, ottimizzazione base'
       };
-    case 'pro':
+    case 'routepro_pro':
       return { 
         maxStops: 50, 
         advancedFeatures: true,
@@ -169,7 +184,7 @@ function getTierLimits(tier: UserTier) {
         api: true,
         description: 'Piano Pro: fino a 50 stop, API, ottimizzazione avanzata'
       };
-    case 'enterprise':
+    case 'routepro_elite':
       return { 
         maxStops: 999, 
         advancedFeatures: true,
@@ -177,7 +192,7 @@ function getTierLimits(tier: UserTier) {
         optimization: true,
         api: true,
         team: true,
-        description: 'Piano Enterprise: stop illimitati, team, supporto prioritario'
+        description: 'Piano Elite: stop illimitati, team, supporto prioritario'
       };
     case 'free':
     default:
@@ -192,24 +207,24 @@ function getTierLimits(tier: UserTier) {
 }
 
 /**
- * 🔴 AGGIUNTO: URL di upgrade per piano
+ * 🔴 CORRETTO: URL di upgrade per piano DB
  */
-function getUpgradeUrl(plan: string): string {
+function getUpgradeUrl(plan: UserTier): string {
   const urls: Record<string, string> = {
-    starter: process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL || 'https://whop.com/checkout/plan_EKxHpB7Pb0adv',
-    pro: process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_PRO_URL || 'https://whop.com/checkout/plan_tJluLgWpAiywp',
-    enterprise: process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_ELITE_URL || 'https://whop.com/checkout/plan_qc6NTliFYt80a',
+    routepro_starter: process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_STARTER_URL || 'https://whop.com/checkout/plan_EKxHpB7Pb0adv',
+    routepro_pro: process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_PRO_URL || 'https://whop.com/checkout/plan_tJluLgWpAiywp',
+    routepro_elite: process.env.NEXT_PUBLIC_WHOP_ROUTEPRO_ELITE_URL || 'https://whop.com/checkout/plan_qc6NTliFYt80a',
   };
   
-  return urls[plan] || urls.starter;
+  return urls[plan] || urls.routepro_starter;
 }
 
 /**
- * 🔴 AGGIUNTO: Styling per tier
+ * 🔴 CORRETTO: Styling per tier DB
  */
 function getTierStyles(tier: UserTier) {
   switch(tier) {
-    case 'starter':
+    case 'routepro_starter':
       return {
         bg: 'bg-blue-50/80',
         border: 'border-blue-200',
@@ -218,7 +233,7 @@ function getTierStyles(tier: UserTier) {
         gradient: 'from-blue-50/50 to-blue-100/30',
         badge: 'bg-blue-100 text-blue-700 border-blue-200'
       };
-    case 'pro':
+    case 'routepro_pro':
       return {
         bg: 'bg-purple-50/80',
         border: 'border-purple-200',
@@ -227,7 +242,7 @@ function getTierStyles(tier: UserTier) {
         gradient: 'from-purple-50/50 to-purple-100/30',
         badge: 'bg-purple-100 text-purple-700 border-purple-200'
       };
-    case 'enterprise':
+    case 'routepro_elite':
       return {
         bg: 'bg-amber-50/80',
         border: 'border-amber-200',
@@ -282,7 +297,6 @@ export default function RouteProHome() {
       if (err) {
         console.error("Errore caricamento rotte:", err);
         
-        // Gestione errori specifici
         if (err.code === '42P01') {
           setError("La tabella 'routes' non esiste. Contatta l'assistenza.");
         } else if (err.code === '42501') {
@@ -322,7 +336,7 @@ export default function RouteProHome() {
       if (error) throw error;
 
       setMsg({ type: 'success', text: '✅ Rotta eliminata con successo' });
-      await loadRoutes(); // Ricarica lista
+      await loadRoutes();
     } catch (e: any) {
       setMsg({ 
         type: 'error', 
@@ -334,9 +348,9 @@ export default function RouteProHome() {
   }
 
   /**
-   * 🔴 AGGIUNTO: Handler upgrade
+   * 🔴 CORRETTO: Handler upgrade con tier DB
    */
-  const handleUpgrade = (plan: string) => {
+  const handleUpgrade = (plan: UserTier) => {
     window.location.href = getUpgradeUrl(plan);
   };
 
@@ -357,15 +371,14 @@ export default function RouteProHome() {
         return;
       }
 
-      // 2. 🔴 Sincronizza tier con Whop (API reale)
+      // 2. Sincronizza tier con Whop (API reale)
       const userTier = await syncTierWithWhop();
       setTier(userTier);
 
-      // 3. 🔴 Verifica accesso RoutePro in base al tier
+      // 3. Verifica accesso RoutePro in base al tier
       const hasAccess = userTier !== 'free';
       
       if (!hasAccess) {
-        // Mostra upgrade invece di redirect immediato
         setChecking(false);
         return;
       }
@@ -406,7 +419,7 @@ export default function RouteProHome() {
     
     return (
       <main className="min-h-dvh bg-white text-neutral-900">
-        {/* Header uguale ma con badge Free */}
+        {/* Header */}
         <header className="sticky top-0 z-50 border-b bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/80">
           <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3">
             <Link href="/hub" className="flex items-center gap-3 group">
@@ -495,7 +508,7 @@ export default function RouteProHome() {
                 </ul>
                 <Button 
                   className="w-full bg-blue-600 hover:bg-blue-700"
-                  onClick={() => handleUpgrade('starter')}
+                  onClick={() => handleUpgrade('routepro_starter')}
                 >
                   Attiva Starter
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -541,7 +554,7 @@ export default function RouteProHome() {
                 </ul>
                 <Button 
                   className="w-full bg-purple-600 hover:bg-purple-700"
-                  onClick={() => handleUpgrade('pro')}
+                  onClick={() => handleUpgrade('routepro_pro')}
                 >
                   Attiva Pro
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -549,12 +562,12 @@ export default function RouteProHome() {
               </CardContent>
             </Card>
 
-            {/* Enterprise Card */}
+            {/* Elite Card */}
             <Card className="rounded-2xl border border-amber-200 shadow-sm hover:shadow-md transition-all">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-amber-700">
                   <Zap className="h-5 w-5" />
-                  Enterprise
+                  Elite
                 </CardTitle>
                 <div className="mt-2">
                   <span className="text-3xl font-bold">€49</span>
@@ -583,7 +596,7 @@ export default function RouteProHome() {
                 <Button 
                   variant="outline"
                   className="w-full border-amber-300 hover:bg-amber-50"
-                  onClick={() => handleUpgrade('enterprise')}
+                  onClick={() => handleUpgrade('routepro_elite')}
                 >
                   Contattaci
                   <ArrowRight className="ml-2 h-4 w-4" />
@@ -613,6 +626,7 @@ export default function RouteProHome() {
   // =============================================
   const tierLimits = getTierLimits(tier);
   const tierStyles = getTierStyles(tier);
+  const displayTier = getDisplayTier(tier);
 
   return (
     <main className="min-h-dvh bg-white text-neutral-900">
@@ -629,18 +643,18 @@ export default function RouteProHome() {
                 RoutePro NDW
               </span>
               <span className="text-[11px] text-neutral-500">
-                Ottimizzazione percorsi • {tier.charAt(0).toUpperCase() + tier.slice(1)}
+                Ottimizzazione percorsi • {displayTier}
               </span>
             </div>
           </Link>
 
           {/* Navigazione */}
           <div className="flex items-center gap-3">
-            {/* Badge Piano - 🔴 DINAMICO */}
+            {/* Badge Piano - DINAMICO */}
             <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg border ${tierStyles.bg} ${tierStyles.border}`}>
               <Shield className={`h-3.5 w-3.5 ${tierStyles.icon}`} />
               <span className={`text-xs font-medium ${tierStyles.text}`}>
-                NDW {tier.charAt(0).toUpperCase() + tier.slice(1)}
+                NDW {displayTier}
               </span>
             </div>
 
@@ -693,7 +707,7 @@ export default function RouteProHome() {
         <div className="mb-8">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-3">
             <Map className="h-3 w-3" />
-            NDW Core • RoutePro {tier.charAt(0).toUpperCase() + tier.slice(1)}
+            NDW Core • RoutePro {displayTier}
           </div>
           
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -704,7 +718,7 @@ export default function RouteProHome() {
             Importa stop, ottimizza percorsi, esporta ordini. Risparmia tempo e carburante ogni giorno.
           </p>
           
-          {/* Tier Info - 🔴 DINAMICO */}
+          {/* Tier Info - DINAMICO */}
           <div className={`mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${tierStyles.bg} ${tierStyles.text} border ${tierStyles.border}`}>
             <Rocket className={`h-4 w-4 ${tierStyles.icon}`} />
             ⚡ {tierLimits.description}
@@ -736,7 +750,7 @@ export default function RouteProHome() {
             </CardContent>
           </Card>
 
-          {/* Card 2: Driver Mode - 🔴 CONDIZIONALE */}
+          {/* Card 2: Driver Mode - CONDIZIONALE */}
           <Card className="rounded-2xl border border-neutral-200/80 shadow-sm hover:shadow-md transition-shadow">
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-medium text-neutral-700 flex items-center gap-2">
@@ -838,7 +852,7 @@ export default function RouteProHome() {
                   Riprova
                 </Button>
               </div>
-            ) : /* Empty State */ routes.length === 0 ? (
+            ) : routes.length === 0 ? (
               <div className="p-8 text-center">
                 <div className="h-20 w-20 rounded-full bg-gradient-to-br from-primary/5 to-primary/10 flex items-center justify-center mx-auto mb-4">
                   <Map className="h-10 w-10 text-primary/60" />
@@ -856,7 +870,7 @@ export default function RouteProHome() {
                   </Button>
                 </Link>
               </div>
-            ) : /* Routes List */ (
+            ) : (
               <div className="divide-y divide-neutral-100">
                 {routes.map((route) => (
                   <div
@@ -896,7 +910,7 @@ export default function RouteProHome() {
                                     {formatDate(route.route_date)}
                                   </div>
                                   
-                                  {/* Stops Count - 🔴 Mostra limite tier */}
+                                  {/* Stops Count - Mostra limite tier */}
                                   <div className="flex items-center gap-1.5 text-xs text-neutral-600">
                                     <Package className="h-3.5 w-3.5" />
                                     {route.total_stops} stop
@@ -975,7 +989,7 @@ export default function RouteProHome() {
           </CardContent>
         </Card>
 
-        {/* ===== INFO PIANO - 🔴 DINAMICO CON STILI ===== */}
+        {/* ===== INFO PIANO - DINAMICO CON STILI ===== */}
         <div className={`mt-8 p-5 rounded-2xl border bg-gradient-to-r ${tierStyles.gradient} ${tierStyles.border}`}>
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
@@ -984,14 +998,14 @@ export default function RouteProHome() {
               </div>
               <div>
                 <h3 className="font-medium text-neutral-800">
-                  Piano RoutePro {tier.charAt(0).toUpperCase() + tier.slice(1)} Attivo
+                  Piano RoutePro {displayTier} Attivo
                 </h3>
                 <p className="text-sm text-neutral-600 mt-1">
-                  {tier === 'starter' 
+                  {tier === 'routepro_starter' 
                     ? "Stai utilizzando RoutePro Starter. Sblocca più stop e automazioni con l'upgrade a Pro."
-                    : tier === 'pro'
-                    ? "Hai accesso a tutte le funzionalità RoutePro Pro. Sblocca supporto prioritario con Enterprise."
-                    : "Hai accesso completo a tutte le funzionalità RoutePro Enterprise."}
+                    : tier === 'routepro_pro'
+                    ? "Hai accesso a tutte le funzionalità RoutePro Pro. Sblocca supporto prioritario con Elite."
+                    : "Hai accesso completo a tutte le funzionalità RoutePro Elite."}
                 </p>
               </div>
             </div>
@@ -1008,7 +1022,7 @@ export default function RouteProHome() {
         </div>
 
         {/* ===== BANNER UPGRADE PER STARTER ===== */}
-        {tier === 'starter' && (
+        {tier === 'routepro_starter' && (
           <div className="mt-6 p-4 rounded-xl bg-gradient-to-r from-purple-50/50 to-purple-100/30 border border-purple-200">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -1026,7 +1040,7 @@ export default function RouteProHome() {
               </div>
               <Button 
                 className="bg-purple-600 hover:bg-purple-700"
-                onClick={() => handleUpgrade('pro')}
+                onClick={() => handleUpgrade('routepro_pro')}
               >
                 Scopri Pro
                 <ArrowRight className="ml-2 h-4 w-4" />
@@ -1046,7 +1060,7 @@ export default function RouteProHome() {
               </div>
               <div>
                 <div className="text-xs font-medium text-neutral-700">
-                  RoutePro NDW • {tier.charAt(0).toUpperCase() + tier.slice(1)}
+                  RoutePro NDW • {displayTier}
                 </div>
                 <div className="text-[11px] text-neutral-500">
                   Nota Digital Works • {new Date().getFullYear()}

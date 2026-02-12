@@ -1,281 +1,236 @@
-"use client";
+// 📁 components/routepro/RouteMap.tsx
+'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
-import type { Map as LeafletMap, DivIcon } from "leaflet";
+import { useEffect, useRef, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import 'leaflet-defaulticon-compatibility';
+import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css';
+import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, ZoomControl } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
 
-type MapStop = {
-  id: string;
-  af: number;
-  opt: number;
-  address: string;
-  lat: number;
-  lng: number;
-  isDone: boolean;
-  isActive: boolean;
-};
+// Fix per icone Leaflet in Next.js
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
 
-type Props = {
-  stops: MapStop[];
-  onSelectStop?: (id: string) => void;
-};
-
-// React-Leaflet dynamic (evita SSR issues)
-const MapContainer = dynamic(() => import("react-leaflet").then((m) => m.MapContainer), { ssr: false });
-const TileLayer = dynamic(() => import("react-leaflet").then((m) => m.TileLayer), { ssr: false });
-const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), { ssr: false });
-const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), { ssr: false });
-const Polyline = dynamic(() => import("react-leaflet").then((m) => m.Polyline), { ssr: false });
-
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
-
-function asLatLngs(stops: MapStop[]) {
-  return stops.map((s) => [s.lat, s.lng] as [number, number]);
-}
-
-// Piccole icone HTML (stile “pallino”)
-// Usiamo divIcon (leaflet) solo a runtime, quindi lo carichiamo con require dentro useMemo.
-function buildDotIcon(
-  kind: "pickup" | "return" | "delivery",
-  label: string,
-  active: boolean,
-  done: boolean
-): DivIcon | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const L = require("leaflet");
-
-    const text = kind === "pickup" ? "📦" : kind === "return" ? "↩️" : label;
-
-    const bg = done ? "#F3F4F6" : "#FFFFFF";          // grigino se fatto
-    const fg = done ? "#6B7280" : "#111827";          // testo grigio se fatto
-    const border = active ? "2px solid #111827" : "1px solid #D1D5DB";
-    const shadow = active
-      ? "0 2px 10px rgba(0,0,0,.25)"
-      : "0 1px 4px rgba(0,0,0,.15)";
-    const scale = active ? "scale(1.15)" : "scale(1)";
-
-    const html = `
-      <div style="
-        width:28px;height:28px;border-radius:9999px;
-        display:flex;align-items:center;justify-content:center;
-        font-size:12px;font-weight:700;
-        background:${bg};color:${fg};
-        border:${border};
-        box-shadow:${shadow};
-        transform:${scale};
-      ">
-        ${text}
-      </div>
-    `;
-
-    return L.divIcon({
-      className: "ndw-dot-wrap",
-      html,
-      iconSize: [28, 28],
-      iconAnchor: [14, 14],
-      popupAnchor: [0, -12],
-    });
-  } catch {
-    return null;
-  }
-}
-
-
-export function RouteMap({ stops, onSelectStop }: Props) {
-  const mapRef = useRef<LeafletMap | null>(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // Guess tipo stop dalla stringa (per non toccare DB)
-  const getKind = (address: string): "pickup" | "return" | "delivery" => {
-    const a = address.trim();
-    if (a.startsWith("📦")) return "pickup";
-    if (a.startsWith("↩️")) return "return";
-    return "delivery";
+// Marker personalizzati per tipo stop
+const getMarkerIcon = (type: string, isCompleted?: boolean) => {
+  const colors = {
+    pickup: '#10b981', // verde
+    delivery: '#3b82f6', // blu
+    return: '#8b5cf6', // viola
   };
+  
+  const color = isCompleted ? '#9ca3af' : colors[type as keyof typeof colors] || '#3b82f6';
+  
+  return L.divIcon({
+    html: `
+      <div style="
+        background-color: ${color};
+        width: ${isCompleted ? '28px' : '32px'};
+        height: ${isCompleted ? '28px' : '32px'};
+        border-radius: 50% 50% 50% 0;
+        border: 3px solid white;
+        transform: rotate(-45deg);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: ${isCompleted ? '0.7' : '1'};
+      ">
+        <span style="
+          transform: rotate(45deg);
+          color: white;
+          font-size: ${isCompleted ? '12px' : '14px'};
+          font-weight: bold;
+        ">
+          ${type === 'pickup' ? 'P' : type === 'delivery' ? 'D' : 'R'}
+        </span>
+      </div>
+    `,
+    className: 'custom-marker',
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
+    popupAnchor: [0, -32],
+  });
+};
 
-  const pointsAll = useMemo(() => asLatLngs(stops), [stops]);
+// Componente per fit bounds automatico
+function FitBounds({ stops }: { stops: any[] }) {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (stops.length > 0) {
+      const validStops = stops.filter(s => s.lat && s.lng);
+      if (validStops.length > 0) {
+        const bounds = L.latLngBounds(validStops.map(s => [s.lat, s.lng]));
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+    }
+  }, [stops, map]);
+  
+  return null;
+}
 
-  const nextStop = useMemo(() => stops.find((s) => !s.isDone) ?? null, [stops]);
+interface RouteMapProps {
+  stops: Array<{
+    id: string;
+    stop_index: number;
+    address: string;
+    lat: number;
+    lng: number;
+    stop_type: 'pickup' | 'delivery' | 'return';
+    notes?: string;
+    is_completed?: boolean;
+    time_window_start?: string;
+    time_window_end?: string;
+  }>;
+  optimizedRoute?: Array<[number, number]>;
+  onStopClick?: (stopId: string) => void;
+  height?: string;
+  showClusters?: boolean;
+}
 
-  const pointsRemaining = useMemo(() => {
-    if (!nextStop) return [];
-    const idx = stops.findIndex((s) => s.id === nextStop.id);
-    if (idx < 0) return [];
-    return asLatLngs(stops.slice(idx));
-  }, [stops, nextStop]);
-
-  const done = useMemo(() => stops.filter((s) => s.isDone).length, [stops]);
-  const total = stops.length;
-  const remaining = total - done;
-
-  // Icone memoizzate (1 per marker)
-  const markerIcons = useMemo(() => {
-    return stops.map((s) => {
-      const kind = getKind(s.address);
-      const label = String(s.opt);
-      return buildDotIcon(kind, label, s.isActive, s.isDone);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stops.map((s) => `${s.id}:${s.isActive}:${s.isDone}:${s.opt}:${s.address}`).join("|")]);
-
-  function centerOnNext() {
-    if (!nextStop) return;
-    const map = mapRef.current;
-    if (!map) return;
-    map.setView([nextStop.lat, nextStop.lng], clamp(map.getZoom(), 13, 17), { animate: true });
-    onSelectStop?.(nextStop.id);
-  }
+export default function RouteMap({ 
+  stops, 
+  optimizedRoute, 
+  onStopClick,
+  height = '500px',
+  showClusters = true 
+}: RouteMapProps) {
+  const [mapReady, setMapReady] = useState(false);
+  const validStops = stops.filter(s => s.lat && s.lng);
+  const hasValidStops = validStops.length > 0;
+  
+  // Centro mappa di default (Italia)
+  const defaultCenter: [number, number] = [41.9028, 12.4964];
+  
+  // Converti percorso per Polyline
+  const routeCoordinates = optimizedRoute?.map(coord => [coord[1], coord[0]] as [number, number]) || [];
 
   return (
-    <div
-      className={
-        isFullscreen
-          ? "fixed inset-0 z-50 bg-white"
-          : "rounded-2xl border bg-white overflow-hidden"
-      }
-      style={isFullscreen ? undefined : { height: 520 }}
-    >
-      {/* CSS locale per pallini */}
-      <style>{`
-        .ndw-dot-wrap { background: transparent !important; border: none !important; }
-        .ndw-dot{
-          width:28px;height:28px;border-radius:9999px;
-          display:flex;align-items:center;justify-content:center;
-          font-size:12px;font-weight:700;
-          box-shadow: 0 1px 4px rgba(0,0,0,.15);
-        }
-      `}</style>
-
-      {/* TOP OVERLAY */}
-      <div className="pointer-events-none absolute left-0 right-0 top-0 z-[500] p-3">
-        <div className="pointer-events-auto flex items-center justify-between gap-2">
-          <div className="rounded-2xl border bg-white/95 px-3 py-2 shadow-sm">
-            <div className="text-xs text-neutral-500">Mappa</div>
-            <div className="text-sm font-semibold">
-              {done}/{total} fatte • {remaining} rimanenti
-            </div>
-            {nextStop && (
-              <div className="mt-1 text-[11px] text-neutral-600">
-                Prossimo: <b>OPT #{nextStop.opt}</b> (AF #{nextStop.af})
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={centerOnNext}
-              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
-              disabled={!nextStop}
-            >
-              Prossimo
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setIsFullscreen((v) => !v)}
-              className="rounded-2xl border bg-white/95 px-3 py-2 text-sm shadow-sm"
-            >
-              {isFullscreen ? "Esci" : "⛶ Guida"}
-            </button>
-          </div>
+    <div style={{ height, width: '100%', position: 'relative' }}>
+      {!hasValidStops && (
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-50 bg-opacity-90 z-10 rounded-lg">
+          <p className="text-gray-500">Nessuna fermata con coordinate valide</p>
         </div>
-      </div>
-
+      )}
+      
       <MapContainer
-        center={pointsAll[0] ?? [45.5, 9.2]}
-        zoom={12}
-        style={{ height: "100%", width: "100%" }}
+        center={defaultCenter}
+        zoom={6}
+        style={{ height: '100%', width: '100%', borderRadius: '0.5rem' }}
+        zoomControl={false}
+        whenReady={() => setMapReady(true)}
       >
-        <MapBinder
-          mapRef={mapRef}
-          isFullscreen={isFullscreen}
-          pointsAll={pointsAll}
-        />
-
+        <ZoomControl position="bottomright" />
+        
         <TileLayer
-          attribution="&copy; OpenStreetMap contributors"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-
-        {/* Polyline “tutto” (sottile) */}
-        {pointsAll.length >= 2 && (
-          <Polyline positions={pointsAll} pathOptions={{ weight: 3, opacity: 0.35 }} />
+        
+        {mapReady && hasValidStops && (
+          <>
+            <FitBounds stops={validStops} />
+            
+            {/* Polyline percorso ottimizzato */}
+            {routeCoordinates.length > 0 && (
+              <Polyline
+                positions={routeCoordinates}
+                color="#3b82f6"
+                weight={5}
+                opacity={0.8}
+                smoothFactor={1}
+                dashArray={optimizedRoute ? undefined : '5, 10'}
+              />
+            )}
+            
+            {/* Marker stops */}
+            {showClusters ? (
+              <MarkerClusterGroup
+                chunkedLoading
+                spiderfyDistanceMultiplier={2}
+                polygonOptions={{
+                  fillColor: '#3b82f6',
+                  color: '#1e3a8a',
+                  weight: 2,
+                  opacity: 1,
+                  fillOpacity: 0.5,
+                }}
+              >
+                {validStops.map((stop) => (
+                  <Marker
+                    key={stop.id}
+                    position={[stop.lat, stop.lng]}
+                    icon={getMarkerIcon(stop.stop_type, stop.is_completed)}
+                    eventHandlers={{
+                      click: () => onStopClick?.(stop.id),
+                    }}
+                  >
+                    <Popup>
+                      <div className="p-2 max-w-xs">
+                        <div className="font-semibold flex items-center gap-2">
+                          <span className={`
+                            px-2 py-0.5 rounded-full text-xs text-white
+                            ${stop.stop_type === 'pickup' ? 'bg-green-500' : ''}
+                            ${stop.stop_type === 'delivery' ? 'bg-blue-500' : ''}
+                            ${stop.stop_type === 'return' ? 'bg-purple-500' : ''}
+                          `}>
+                            {stop.stop_type === 'pickup' ? 'PRELIEVO' : 
+                             stop.stop_type === 'delivery' ? 'CONSEGNA' : 'RITORNO'}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            #{stop.stop_index + 1}
+                          </span>
+                        </div>
+                        <p className="text-sm mt-1">{stop.address}</p>
+                        {stop.notes && (
+                          <p className="text-xs text-gray-600 mt-1 italic">
+                            📝 {stop.notes}
+                          </p>
+                        )}
+                        {(stop.time_window_start || stop.time_window_end) && (
+                          <p className="text-xs text-gray-600 mt-1">
+                            ⏰ {stop.time_window_start || '--:--'} - {stop.time_window_end || '--:--'}
+                          </p>
+                        )}
+                        {stop.is_completed && (
+                          <p className="text-xs text-green-600 mt-1 font-semibold">
+                            ✅ COMPLETATO
+                          </p>
+                        )}
+                      </div>
+                    </Popup>
+                  </Marker>
+                ))}
+              </MarkerClusterGroup>
+            ) : (
+              validStops.map((stop) => (
+                <Marker
+                  key={stop.id}
+                  position={[stop.lat, stop.lng]}
+                  icon={getMarkerIcon(stop.stop_type, stop.is_completed)}
+                  eventHandlers={{
+                    click: () => onStopClick?.(stop.id),
+                  }}
+                >
+                  <Popup>
+                    <div className="p-2">
+                      <p className="font-semibold">{stop.address}</p>
+                      <p className="text-sm text-gray-600">Tipo: {stop.stop_type}</p>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))
+            )}
+          </>
         )}
-
-        {/* Polyline “rimanente” (più evidente) */}
-        {pointsRemaining.length >= 2 && (
-          <Polyline positions={pointsRemaining} pathOptions={{ weight: 5, opacity: 0.8 }} />
-        )}
-
-        {stops.map((s, i) => (
-          <Marker
-            key={s.id}
-            position={[s.lat, s.lng]}
-            // se icon null, leaflet mette default, ma ormai “Mark” lo riduci molto
-            icon={markerIcons[i] ?? undefined}
-            eventHandlers={{
-              click: () => onSelectStop?.(s.id),
-            }}
-          >
-            <Popup>
-              <div className="text-sm font-semibold">
-                OPT #{s.opt} • AF #{s.af}
-              </div>
-              <div className="text-xs text-neutral-700">{s.address}</div>
-              <div className="mt-1 text-xs">{s.isDone ? "✅ Fatto" : "⏳ Da fare"}</div>
-            </Popup>
-          </Marker>
-        ))}
       </MapContainer>
     </div>
   );
-}
-
-function MapBinder({
-  mapRef,
-  isFullscreen,
-  pointsAll,
-}: {
-  mapRef: React.MutableRefObject<LeafletMap | null>;
-  isFullscreen: boolean;
-  pointsAll: Array<[number, number]>;
-}) {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const useMap = require("react-leaflet").useMap as () => LeafletMap;
-  const map = useMap();
-
-  useEffect(() => {
-    mapRef.current = map;
-    (window as any).__reactLeaflet_map = map;
-  }, [map, mapRef]);
-
-  // fit bounds quando cambiano i punti
-  useEffect(() => {
-    if (!map) return;
-    if (pointsAll.length < 2) {
-      if (pointsAll.length === 1) map.setView(pointsAll[0], 14);
-      return;
-    }
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const L = require("leaflet");
-      const bounds = L.latLngBounds(pointsAll);
-      map.fitBounds(bounds, { padding: [24, 24] });
-    } catch {
-      // no-op
-    }
-  }, [map, pointsAll]);
-
-  // invalidateSize quando toggli fullscreen
-  useEffect(() => {
-    if (!map) return;
-    const t = setTimeout(() => map.invalidateSize(), 80);
-    return () => clearTimeout(t);
-  }, [map, isFullscreen]);
-
-  return null;
 }

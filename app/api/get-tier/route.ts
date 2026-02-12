@@ -1,29 +1,28 @@
-// app/api/get-tier/route.ts
+// 📁 app/api/get-tier/route.ts
 import { NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getUserTier, isInternalAccount } from '@/lib/entitlement';
 
 export async function GET() {
   try {
-    const supabase = await createClient();
+    const tier = await getUserTier();
+    const isInternal = await isInternalAccount();
     
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return NextResponse.json({ tier: 'free' }); // Non autenticato = free
-    }
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('whop_tier')
-      .eq('user_id', user.id)
-      .single();
-
     return NextResponse.json({ 
-      tier: profile?.whop_tier || 'free',
-      userId: user.id
+      tier,
+      isInternal,
+      planUrls: {
+        starter: 'https://whop.com/checkout/routepro-starter/',
+        pro: 'https://whop.com/checkout/routepro-pro/',
+        elite: 'https://whop.com/checkout/routepro-elite/'
+      }
     });
-
+    
   } catch (error) {
-    console.error('Get tier error:', error);
-    return NextResponse.json({ tier: 'free' }); // Fail safe
+    console.error('Error in get-tier:', error);
+    return NextResponse.json({ 
+      tier: 'free', 
+      isInternal: false,
+      planUrls: {} 
+    });
   }
 }
