@@ -1,4 +1,4 @@
-// app/routepro/routes/[routeId]/page.tsx
+// 📁 app/routepro/routes/[routeId]/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -7,7 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getRouteProTier } from "@/lib/entitlement";
+import { getClientTier } from "@/lib/entitlement-client"; // ✅ IMPORT GIUSTO
 
 type RouteStatus = "draft" | "optimized" | string;
 
@@ -123,8 +123,8 @@ export default function RouteDetailsPage() {
         return;
       }
 
-      // tier label
-      const t = await getRouteProTier();
+      // tier label (client-safe)
+      const t = await getClientTier();
       setTier((t ?? "starter").toUpperCase());
 
       // ⚠️ Nota: se created_at non esiste in DB, Supabase può dare errore.
@@ -308,9 +308,15 @@ export default function RouteDetailsPage() {
                 </h1>
 
                 <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-neutral-600">
-                  <span>Data: <b className="text-neutral-800">{formatDateMaybe(routeDateComputed)}</b></span>
-                  <span>Stop: <b className="text-neutral-800">{totalStopsComputed}</b></span>
-                  <span>Stato: <b className="text-neutral-800">{statusLabel}</b></span>
+                  <span>
+                    Data: <b className="text-neutral-800">{formatDateMaybe(routeDateComputed)}</b>
+                  </span>
+                  <span>
+                    Stop: <b className="text-neutral-800">{totalStopsComputed}</b>
+                  </span>
+                  <span>
+                    Stato: <b className="text-neutral-800">{statusLabel}</b>
+                  </span>
                 </div>
               </div>
 
@@ -324,9 +330,7 @@ export default function RouteDetailsPage() {
               </div>
             </div>
 
-            {msg && (
-              <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">{msg}</div>
-            )}
+            {msg && <div className="rounded-2xl border bg-neutral-50 p-3 text-sm text-neutral-700">{msg}</div>}
 
             <Card className="rounded-2xl">
               <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

@@ -1,20 +1,31 @@
 // 📁 components/routepro/RouteMap.tsx
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-defaulticon-compatibility';
 import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css';
-import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, ZoomControl } from 'react-leaflet';
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Popup,
+  Polyline,
+  useMap,
+  ZoomControl,
+} from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 
 // Fix per icone Leaflet in Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconRetinaUrl:
+    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl:
+    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl:
+    'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
 // Marker personalizzati per tipo stop
@@ -24,9 +35,10 @@ const getMarkerIcon = (type: string, isCompleted?: boolean) => {
     delivery: '#3b82f6', // blu
     return: '#8b5cf6', // viola
   };
-  
-  const color = isCompleted ? '#9ca3af' : colors[type as keyof typeof colors] || '#3b82f6';
-  
+
+  const color =
+    isCompleted ? '#9ca3af' : colors[type as keyof typeof colors] || '#3b82f6';
+
   return L.divIcon({
     html: `
       <div style="
@@ -62,17 +74,17 @@ const getMarkerIcon = (type: string, isCompleted?: boolean) => {
 // Componente per fit bounds automatico
 function FitBounds({ stops }: { stops: any[] }) {
   const map = useMap();
-  
+
   useEffect(() => {
     if (stops.length > 0) {
-      const validStops = stops.filter(s => s.lat && s.lng);
+      const validStops = stops.filter((s) => s.lat && s.lng);
       if (validStops.length > 0) {
-        const bounds = L.latLngBounds(validStops.map(s => [s.lat, s.lng]));
+        const bounds = L.latLngBounds(validStops.map((s) => [s.lat, s.lng]));
         map.fitBounds(bounds, { padding: [50, 50] });
       }
     }
   }, [stops, map]);
-  
+
   return null;
 }
 
@@ -95,22 +107,24 @@ interface RouteMapProps {
   showClusters?: boolean;
 }
 
-export default function RouteMap({ 
-  stops, 
-  optimizedRoute, 
+function RouteMap({
+  stops,
+  optimizedRoute,
   onStopClick,
   height = '500px',
-  showClusters = true 
+  showClusters = true,
 }: RouteMapProps) {
   const [mapReady, setMapReady] = useState(false);
-  const validStops = stops.filter(s => s.lat && s.lng);
+  const validStops = stops.filter((s) => s.lat && s.lng);
   const hasValidStops = validStops.length > 0;
-  
+
   // Centro mappa di default (Italia)
   const defaultCenter: [number, number] = [41.9028, 12.4964];
-  
+
   // Converti percorso per Polyline
-  const routeCoordinates = optimizedRoute?.map(coord => [coord[1], coord[0]] as [number, number]) || [];
+  const routeCoordinates =
+    optimizedRoute?.map((coord) => [coord[1], coord[0]] as [number, number]) ||
+    [];
 
   return (
     <div style={{ height, width: '100%', position: 'relative' }}>
@@ -119,7 +133,7 @@ export default function RouteMap({
           <p className="text-gray-500">Nessuna fermata con coordinate valide</p>
         </div>
       )}
-      
+
       <MapContainer
         center={defaultCenter}
         zoom={6}
@@ -128,16 +142,16 @@ export default function RouteMap({
         whenReady={() => setMapReady(true)}
       >
         <ZoomControl position="bottomright" />
-        
+
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        
+
         {mapReady && hasValidStops && (
           <>
             <FitBounds stops={validStops} />
-            
+
             {/* Polyline percorso ottimizzato */}
             {routeCoordinates.length > 0 && (
               <Polyline
@@ -149,7 +163,7 @@ export default function RouteMap({
                 dashArray={optimizedRoute ? undefined : '5, 10'}
               />
             )}
-            
+
             {/* Marker stops */}
             {showClusters ? (
               <MarkerClusterGroup
@@ -175,14 +189,19 @@ export default function RouteMap({
                     <Popup>
                       <div className="p-2 max-w-xs">
                         <div className="font-semibold flex items-center gap-2">
-                          <span className={`
-                            px-2 py-0.5 rounded-full text-xs text-white
-                            ${stop.stop_type === 'pickup' ? 'bg-green-500' : ''}
-                            ${stop.stop_type === 'delivery' ? 'bg-blue-500' : ''}
-                            ${stop.stop_type === 'return' ? 'bg-purple-500' : ''}
-                          `}>
-                            {stop.stop_type === 'pickup' ? 'PRELIEVO' : 
-                             stop.stop_type === 'delivery' ? 'CONSEGNA' : 'RITORNO'}
+                          <span
+                            className={`
+                              px-2 py-0.5 rounded-full text-xs text-white
+                              ${stop.stop_type === 'pickup' ? 'bg-green-500' : ''}
+                              ${stop.stop_type === 'delivery' ? 'bg-blue-500' : ''}
+                              ${stop.stop_type === 'return' ? 'bg-purple-500' : ''}
+                            `}
+                          >
+                            {stop.stop_type === 'pickup'
+                              ? 'PRELIEVO'
+                              : stop.stop_type === 'delivery'
+                              ? 'CONSEGNA'
+                              : 'RITORNO'}
                           </span>
                           <span className="text-xs text-gray-500">
                             #{stop.stop_index + 1}
@@ -196,7 +215,8 @@ export default function RouteMap({
                         )}
                         {(stop.time_window_start || stop.time_window_end) && (
                           <p className="text-xs text-gray-600 mt-1">
-                            ⏰ {stop.time_window_start || '--:--'} - {stop.time_window_end || '--:--'}
+                            ⏰ {stop.time_window_start || '--:--'} -{' '}
+                            {stop.time_window_end || '--:--'}
                           </p>
                         )}
                         {stop.is_completed && (
@@ -222,7 +242,9 @@ export default function RouteMap({
                   <Popup>
                     <div className="p-2">
                       <p className="font-semibold">{stop.address}</p>
-                      <p className="text-sm text-gray-600">Tipo: {stop.stop_type}</p>
+                      <p className="text-sm text-gray-600">
+                        Tipo: {stop.stop_type}
+                      </p>
                     </div>
                   </Popup>
                 </Marker>
@@ -234,3 +256,5 @@ export default function RouteMap({
     </div>
   );
 }
+
+

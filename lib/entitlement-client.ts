@@ -1,10 +1,7 @@
-﻿import { createClient } from '@/lib/supabase/server';
-import { cache } from 'react';
+﻿import { createClient } from '@/lib/supabase/client';
 
-export type RouteProTier = "starter" | "pro" | "elite";
-
-export const getUserTier = cache(async () => {
-  const supabase = await createClient();
+export async function getClientTier() {
+  const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) return 'free';
   
@@ -18,9 +15,4 @@ export const getUserTier = cache(async () => {
   if (profile.internal_account === true) return 'routepro_elite';
   if (profile.whop_subscription_status === 'active' && profile.whop_tier) return profile.whop_tier;
   return 'free';
-});
-
-export async function hasRouteProAccess(): Promise<boolean> {
-  const tier = await getUserTier();
-  return ['routepro_starter', 'routepro_pro', 'routepro_elite'].includes(tier);
 }

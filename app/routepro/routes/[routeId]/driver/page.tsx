@@ -1,4 +1,4 @@
-// app/routepro/routes/[routeId]/driver/page.tsx
+// 📁 app/routepro/routes/[routeId]/driver/page.tsx
 "use client";
 
 import Link from "next/link";
@@ -6,8 +6,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-import { StopCard } from "@/components/routepro/StopCard";
-import { RouteMap } from "@/components/routepro/RouteMap";
+import StopCard from "@/components/routepro/StopCard"; // ✅ default import
+import RouteMap from "@/components/routepro/RouteMap"; // ✅ default import
 import { StatsSummary } from "@/components/routepro/StatsSummary";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 
@@ -245,19 +245,18 @@ export default function DriverModePage() {
     [orderedStops]
   );
 
-  // ✅ stop per mappa (solo con coordinate)
+  // ✅ stop per mappa (solo con coordinate) — adattati alle props di RouteMap
   const mapStops = useMemo(() => {
     return orderedStops
       .filter((s) => s.lat != null && s.lng != null)
       .map((s, idx) => ({
         id: s.id,
-        af: s.af_stop_number ?? s.position,
-        opt: s.optimized_position ?? idx + 1,
+        stop_index: s.position,
         address: `${s.stop_type === "pickup" ? "📦 " : s.stop_type === "return" ? "↩️ " : ""}${s.address}`,
         lat: s.lat as number,
         lng: s.lng as number,
-        isDone: s.is_done,
-        isActive: s.id === activeStopId,
+        stop_type: s.stop_type,
+        is_completed: s.is_done,
       }));
   }, [orderedStops, activeStopId]);
 
@@ -736,7 +735,7 @@ export default function DriverModePage() {
           mapStops.length > 0 ? (
             <RouteMap
               stops={mapStops}
-              onSelectStop={(id) => {
+              onStopClick={(id) => {
                 setActiveStopId(id);
                 setView("list"); // marker -> lista -> scroll
                 setControlsOpen(false); // richiudi per vedere subito gli stop
