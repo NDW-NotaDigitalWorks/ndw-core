@@ -1,11 +1,11 @@
-// 📁 components/routepro/RouteMap.tsx
+﻿// ðŸ“ components/routepro/RouteMap.tsx
 'use client';
 
 import { useEffect, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import 'leaflet-defaulticon-compatibility';
-import 'leaflet-defaulticon-compatibility/dist/leaflet-defaulticon-compatibility.css';
+// Icon compatibility temporaneamente disabilitata
+// Icon compatibility temporaneamente disabilitata
 import {
   MapContainer,
   TileLayer,
@@ -15,7 +15,7 @@ import {
   useMap,
   ZoomControl,
 } from 'react-leaflet';
-import MarkerClusterGroup from 'react-leaflet-cluster';
+// Cluster temporaneamente disabilitato
 
 // Fix per icone Leaflet in Next.js
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -210,18 +210,18 @@ function RouteMap({
                         <p className="text-sm mt-1">{stop.address}</p>
                         {stop.notes && (
                           <p className="text-xs text-gray-600 mt-1 italic">
-                            📝 {stop.notes}
+                            ðŸ“ {stop.notes}
                           </p>
                         )}
                         {(stop.time_window_start || stop.time_window_end) && (
                           <p className="text-xs text-gray-600 mt-1">
-                            ⏰ {stop.time_window_start || '--:--'} -{' '}
+                            â° {stop.time_window_start || '--:--'} -{' '}
                             {stop.time_window_end || '--:--'}
                           </p>
                         )}
                         {stop.is_completed && (
                           <p className="text-xs text-green-600 mt-1 font-semibold">
-                            ✅ COMPLETATO
+                            âœ… COMPLETATO
                           </p>
                         )}
                       </div>
@@ -258,3 +258,6 @@ function RouteMap({
 }
 
 
+
+
+export default RouteMap;

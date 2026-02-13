@@ -1,4 +1,4 @@
-// components/routepro/StopCard.tsx
+﻿// components/routepro/StopCard.tsx
 "use client";
 
 import { forwardRef } from "react";
@@ -17,7 +17,7 @@ type Props = {
   isActive: boolean;
   onToggleDone: () => void;
 
-  // opzionali (per ripristinare UI “ricca”)
+  // opzionali (per ripristinare UI â€œriccaâ€)
   packages?: number | null;
   stopType?: StopType | string | null;
   timeWindow?: string | null;        // es. "08:30 - 17:30"
@@ -34,7 +34,7 @@ function stopTypeLabel(t?: string | null): string | null {
   return t; // fallback se arriva altro
 }
 
-export const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
+const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
   {
     afNumber,
     optNumber,
@@ -69,7 +69,7 @@ export const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
           {/* Riga top: numeri + tipo + finestra */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-neutral-500">
             <span>
-              AF <b>#{afNumber}</b> • OPT <b>#{optNumber}</b>
+              AF <b>#{afNumber}</b> â€¢ OPT <b>#{optNumber}</b>
             </span>
 
             {typeLabel && (
@@ -85,7 +85,7 @@ export const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
             )}
           </div>
 
-          {/* Riga “titolo” (azienda/nome) */}
+          {/* Riga â€œtitoloâ€ (azienda/nome) */}
           {titleLine && (
             <div className="mt-1 text-sm font-semibold text-neutral-900 break-words">
               {titleLine}
@@ -107,7 +107,7 @@ export const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
           {/* Pacchi */}
           {packages != null && (
             <div className="mt-2 inline-flex items-center rounded-full border bg-neutral-50 px-2 py-1 text-xs text-neutral-700">
-              📦 <b className="mx-1">{packages}</b> {packages === 1 ? "pacco" : "pacchi"}
+              ðŸ“¦ <b className="mx-1">{packages}</b> {packages === 1 ? "pacco" : "pacchi"}
             </div>
           )}
 
@@ -131,3 +131,6 @@ export const StopCard = forwardRef<HTMLDivElement, Props>(function StopCard(
     </div>
   );
 });
+
+
+export default StopCard;
